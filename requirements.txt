@@ -1,0 +1,8 @@
+Django>=4.2,<5.0
+djangorestframework>=3.14
+djangorestframework-simplejwt>=5.2
+psycopg2-binary>=2.9
+gunicorn
+python-dotenv
+twilio>=8.0.0
+phonenumbers>=8.13.0
