@@ -74,6 +74,10 @@ USE_TZ = True
 STATIC_URL = '/static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# Media files (uploaded policies)
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
 # DRF + JWT
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
@@ -92,3 +96,6 @@ OTP_LENGTH = 6
 OTP_TTL_SECONDS = 300
 OTP_MAX_ATTEMPTS = 5
 SMS_PROVIDER = 'twilio'  # or 'textbelt'
+
+# Gemini AI Configuration
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')

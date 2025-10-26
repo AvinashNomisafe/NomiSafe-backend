@@ -6,3 +6,4 @@ gunicorn
 python-dotenv
 twilio>=8.0.0
 phonenumbers>=8.13.0
+google-generativeai>=0.3.0
