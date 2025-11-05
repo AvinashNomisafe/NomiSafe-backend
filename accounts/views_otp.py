@@ -1,6 +1,8 @@
 from django.utils import timezone
 from django.conf import settings
 from rest_framework.views import APIView
+from rest_framework.permissions import AllowAny
+from rest_framework.authentication import SessionAuthentication, BasicAuthentication
 from rest_framework.response import Response
 from rest_framework import status
 from .serializers_otp import OTPRequestSerializer, OTPVerifySerializer
@@ -22,6 +24,12 @@ def normalize_phone(phone: str):
 
 
 class OTPRequestView(APIView):
+    # OTP request is used for login so it must be callable without prior auth.
+    # Avoid running authentication classes (which may raise on malformed/expired
+    # tokens) by clearing authentication_classes and allow any permission.
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
     def post(self, request):
         serializer = OTPRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -48,6 +56,10 @@ class OTPRequestView(APIView):
 
 
 class OTPVerifyView(APIView):
+    # OTP verify also needs to be public so clients can exchange OTP for tokens.
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
     def post(self, request):
         serializer = OTPVerifySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
