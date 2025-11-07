@@ -3,10 +3,23 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
+from rest_framework.views import APIView
 
 from .models import Policy
-from .serializers_policy import PolicyBenefitsSerializer
+from .serializers_policy import PolicyBenefitsSerializer, PolicyListSerializer
 from .pdf_processor import get_policy_benefits_summary
+
+
+class PolicyListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """
+        Get list of all policies for the authenticated user
+        """
+        policies = Policy.objects.filter(user=request.user).order_by('-uploaded_at')
+        serializer = PolicyListSerializer(policies, many=True, context={'request': request})
+        return Response(serializer.data)
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
