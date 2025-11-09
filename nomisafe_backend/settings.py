@@ -103,3 +103,8 @@ SMS_PROVIDER = 'twilio'  # or 'textbelt'
 
 # Gemini AI Configuration
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
+
+# DigiLocker Configuration
+DIGILOCKER_CLIENT_ID = os.environ.get('DIGILOCKER_CLIENT_ID', '')
+DIGILOCKER_CLIENT_SECRET = os.environ.get('DIGILOCKER_CLIENT_SECRET', '')
+DIGILOCKER_REDIRECT_URI = os.environ.get('DIGILOCKER_REDIRECT_URI', 'http://localhost:8000/api/aadhaar/digilocker/callback')
