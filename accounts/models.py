@@ -22,7 +22,6 @@ class User(AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(blank=True, null=True)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
-    is_aadhaar_verified = models.BooleanField(default=False)
 
     objects = UserManager()
 
@@ -47,29 +46,6 @@ class OTP(models.Model):
         self.used = True
         self.save(update_fields=['used'])
 
-
-class AadhaarOTP(models.Model):
-    user = models.ForeignKey('User', on_delete=models.CASCADE, related_name='aadhaar_otps')
-    aadhaar_number = models.CharField(max_length=12)  # Storing last 4 digits only after verification
-    otp_reference = models.CharField(max_length=64)
-    created_at = models.DateTimeField(auto_now_add=True)
-    expires_at = models.DateTimeField()
-    is_verified = models.BooleanField(default=False)
-    attempts = models.IntegerField(default=0)
-
-    class Meta:
-        verbose_name = 'Aadhaar OTP'
-        verbose_name_plural = 'Aadhaar OTPs'
-
-class AadhaarVerification(models.Model):
-    user = models.OneToOneField('User', on_delete=models.CASCADE, related_name='aadhaar_verification')
-    aadhaar_reference = models.CharField(max_length=64)  # Reference ID from Aadhaar system
-    verified_at = models.DateTimeField(auto_now_add=True)
-    aadhaar_last_4 = models.CharField(max_length=4)  # Store only last 4 digits for reference
-
-    class Meta:
-        verbose_name = 'Aadhaar Verification'
-        verbose_name_plural = 'Aadhaar Verifications'
 
 class Policy(models.Model):
     user = models.ForeignKey('User', on_delete=models.CASCADE, related_name='policies')
