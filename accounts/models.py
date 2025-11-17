@@ -22,6 +22,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(blank=True, null=True)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
+    is_aadhaar_verified = models.BooleanField(default=False)
 
     objects = UserManager()
 
