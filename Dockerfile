@@ -22,8 +22,11 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 # Copy project
 COPY . /app
 
-# Create non-root user
-RUN useradd -ms /bin/bash appuser && chown -R appuser:appuser /app
+# Create directories and set permissions
+RUN mkdir -p /app/staticfiles /app/media && \
+    useradd -ms /bin/bash appuser && \
+    chown -R appuser:appuser /app
+
 USER appuser
 
 # Expose port for gunicorn
