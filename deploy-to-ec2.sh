@@ -7,7 +7,14 @@ LOCAL_DIR="/Users/avinash/dev/Projects/Nomisafe/NomiSafe-App/nomisafe-backend"
 
 echo "🚀 Starting deployment to EC2..."
 
-# Step 1: Commit and push changes (if any)
+# Step 1: Check local .env exists
+if [ ! -f "$LOCAL_DIR/.env" ]; then
+    echo "❌ Error: .env file not found in $LOCAL_DIR"
+    echo "Please create .env file first with production settings"
+    exit 1
+fi
+
+# Step 2: Commit and push changes (if any)
 echo "📦 Pushing latest changes to git..."
 cd $LOCAL_DIR
 if [[ -n $(git status -s) ]]; then
@@ -17,6 +24,11 @@ fi
 
 # Step 2: Install Docker and deploy
 echo "🐳 Installing Docker and deploying application..."
+
+# Transfer .env file
+echo "📤 Transferring .env file..."
+scp -i $KEY_PATH $LOCAL_DIR/.env ubuntu@$EC2_IP:~/nomisafe-backend-env
+
 ssh -i $KEY_PATH ubuntu@$EC2_IP << 'ENDSSH'
 set -e
 
@@ -68,6 +80,9 @@ fi
 # Navigate to project
 cd ~/nomisafe-backend
 
+# Move .env file
+mv ~/nomisafe-backend-env .env
+
 # Make entrypoint executable
 chmod +x entrypoint.sh
 
@@ -80,6 +95,8 @@ fi
 
 # Build and start containers
 echo "🏗️  Building Docker images..."
+newgrp docker << DOCKERCMD
+cd ~/nomisafe-backend
 docker compose build --no-cache
 
 echo "🚀 Starting containers..."
@@ -94,6 +111,7 @@ docker compose ps
 echo ""
 echo "📋 Viewing logs..."
 docker compose logs --tail=50
+DOCKERCMD
 
 echo ""
 echo "✅ Deployment complete!"
