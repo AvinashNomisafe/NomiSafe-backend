@@ -21,13 +21,16 @@ ssh -i $KEY_PATH ubuntu@$EC2_IP << 'ENDSSH'
 set -e
 
 # Clone or pull repository
-if [ ! -d "nomisafe-backend" ]; then
+cd ~
+if [ ! -d "nomisafe-backend/.git" ]; then
     echo "📥 Cloning repository..."
+    rm -rf nomisafe-backend
     git clone https://github.com/AvinashNomisafe/NomiSafe-backend.git nomisafe-backend
 else
     echo "📥 Pulling latest changes..."
     cd nomisafe-backend
-    git pull origin main
+    git fetch origin
+    git reset --hard origin/main
     cd ~
 fi
 
