@@ -48,12 +48,3 @@ class OTP(models.Model):
         self.save(update_fields=['used'])
 
 
-class Policy(models.Model):
-    user = models.ForeignKey('User', on_delete=models.CASCADE, related_name='policies')
-    name = models.CharField(max_length=255)
-    document = models.FileField(upload_to='policies/')
-    benefits = models.TextField(blank=True)
-    uploaded_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"{self.name} ({self.user})"

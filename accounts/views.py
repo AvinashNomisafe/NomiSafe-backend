@@ -16,14 +16,10 @@ import phonenumbers
 from .serializers import (
     OTPRequestSerializer, 
     OTPVerifySerializer,
-    PolicySerializer,
-    PolicyListSerializer,
-    PolicyBenefitsSerializer
 )
 from .otp_utils import generate_code, hash_otp, default_otp_ttl
-from .models import OTP, Policy
+from .models import OTP
 from .sms_provider import send_sms
-from .pdf_processor import get_policy_benefits_summary
 
 
 def normalize_phone(phone: str):
@@ -34,11 +30,7 @@ def normalize_phone(phone: str):
         return phone
 
 
-# OTP Views
 class OTPRequestView(APIView):
-    # OTP request is used for login so it must be callable without prior auth.
-    # Avoid running authentication classes (which may raise on malformed/expired
-    # tokens) by clearing authentication_classes and allow any permission.
     authentication_classes = []
     permission_classes = [AllowAny]
 
@@ -68,7 +60,6 @@ class OTPRequestView(APIView):
 
 
 class OTPVerifyView(APIView):
-    # OTP verify also needs to be public so clients can exchange OTP for tokens.
     authentication_classes = []
     permission_classes = [AllowAny]
 
@@ -100,64 +91,3 @@ class OTPVerifyView(APIView):
         return Response({'id': user.id, 'phone_number': user.phone_number, 'access': str(refresh.access_token), 'refresh': str(refresh)}, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
 
-# Policy Views
-class PolicyUploadView(APIView):
-	"""Upload a policy PDF and associate it with the authenticated user."""
-	permission_classes = [permissions.IsAuthenticated]
-	parser_classes = [MultiPartParser, FormParser]
-
-	def post(self, request, format=None):
-		serializer = PolicySerializer(data=request.data, context={'request': request})
-		serializer.is_valid(raise_exception=True)
-		policy = serializer.save()
-		return Response({'id': policy.id, 'name': policy.name, 'uploaded_at': policy.uploaded_at}, status=status.HTTP_201_CREATED)
-
-
-class PolicyListView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        """
-        Get list of all policies for the authenticated user
-        """
-        policies = Policy.objects.filter(user=request.user).order_by('-uploaded_at')
-        serializer = PolicyListSerializer(policies, many=True, context={'request': request})
-        return Response(serializer.data)
-
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def process_policy_benefits(request, policy_id):
-    """
-    Process policy benefits using Gemini AI if they're not already extracted
-    """
-    # Get the policy object
-    policy = get_object_or_404(Policy, id=policy_id, user=request.user)
-    
-    # If benefits are already extracted, return them
-    if policy.benefits:
-        serializer = PolicyBenefitsSerializer(policy)
-        return Response(serializer.data)
-    
-    # Process the PDF and extract benefits using Gemini
-    benefits = get_policy_benefits_summary(policy.document.path)
-    
-    if not benefits:
-        return Response(
-            {"error": "Failed to process document"},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-    
-    # Check for error messages
-    if benefits.startswith("ERROR:"):
-        error_message = benefits.replace("ERROR: ", "")
-        return Response(
-            {"error": error_message},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-    
-    # Update the policy with extracted benefits
-    policy.benefits = benefits
-    policy.save()
-    serializer = PolicyBenefitsSerializer(policy)
-    return Response(serializer.data)
