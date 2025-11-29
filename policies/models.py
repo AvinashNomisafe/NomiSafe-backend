@@ -3,6 +3,17 @@ from django.conf import settings
 from django.utils import timezone
 
 
+def get_policy_storage():
+    """
+    Dynamically get the storage backend based on settings
+    Allows easy switching between local and S3 storage
+    """
+    if getattr(settings, 'USE_S3_STORAGE', False):
+        from nomisafe_backend.storages import PolicyDocumentStorage
+        return PolicyDocumentStorage()
+    return None
+
+
 class Policy(models.Model):
     INSURANCE_TYPES = [
         ('LIFE', 'Life Insurance'),
@@ -17,7 +28,7 @@ class Policy(models.Model):
     
     # Basic Information 
     name = models.CharField(max_length=255, help_text="Policy name or identifier")
-    document = models.FileField(upload_to='policies/')
+    document = models.FileField(upload_to='', storage=get_policy_storage)
     uploaded_at = models.DateTimeField(auto_now_add=True)
     
     # AI-Extracted Fields
