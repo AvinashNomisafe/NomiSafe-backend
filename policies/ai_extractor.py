@@ -1,0 +1,283 @@
+import google.generativeai as genai
+from django.conf import settings
+import json
+import tempfile
+import os
+import logging
+import time
+from google.api_core import exceptions as google_exceptions
+
+genai.configure(api_key=settings.GEMINI_API_KEY)
+
+# Configure logger
+logger = logging.getLogger(__name__)
+
+class PolicyAIExtractor:
+    def __init__(self):
+        # Use free Gemini 2.0 Flash model
+        self.model = genai.GenerativeModel('gemini-2.5-flash')
+    
+    def extract_policy_preview(self, policy_document) -> dict:
+        """
+        Extract data from policy for user preview/verification
+        Returns structured data without saving to database
+        policy_document: Django FileField object
+        """
+        try:
+            # Upload PDF directly to Gemini
+            uploaded_file = self._upload_to_gemini(policy_document)
+            
+            # Step 1: Identify insurance type
+            insurance_type = self._identify_insurance_type(uploaded_file)
+            
+            # Step 2: Extract data based on type
+            if insurance_type == 'LIFE':
+                extracted_data = self._extract_life_insurance_data(uploaded_file)
+            elif insurance_type == 'HEALTH':
+                extracted_data = self._extract_health_insurance_data(uploaded_file)
+            else:
+                raise ValueError(f"Unsupported insurance type: {insurance_type}")
+            
+            # Add insurance type to response
+            extracted_data['insurance_type'] = insurance_type
+            
+            return extracted_data
+            
+        except Exception as e:
+            raise e
+    
+    def _upload_to_gemini(self, file_field):
+        """Upload PDF file to Gemini API with retry logic"""
+        # Create a temporary file to store the PDF
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+            # Read file content from S3 or local storage
+            file_field.open('rb')
+            content = file_field.read()
+            tmp_file.write(content)
+            tmp_path = tmp_file.name
+        
+        # Check file size (Gemini has limits)
+        file_size_mb = os.path.getsize(tmp_path) / (1024 * 1024)
+        logger.info(f"PDF file size: {file_size_mb:.2f} MB")
+        
+        if file_size_mb > 20:  # Gemini free tier limit
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            raise ValueError(f"PDF file too large ({file_size_mb:.2f} MB). Maximum size is 20 MB.")
+        
+        max_retries = 3
+        retry_delay = 2
+        
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Uploading to Gemini (attempt {attempt + 1}/{max_retries})...")
+                # Use resumable upload for files > 10MB
+                resumable = file_size_mb > 10
+                uploaded_file = genai.upload_file(
+                    tmp_path, 
+                    mime_type='application/pdf',
+                    resumable=resumable
+                )
+                logger.info("File uploaded successfully to Gemini")
+                return uploaded_file
+            except BrokenPipeError as e:
+                logger.warning(f"Broken pipe error on attempt {attempt + 1}: {e}")
+                if attempt < max_retries - 1:
+                    logger.info(f"Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    raise ValueError("Failed to upload PDF to AI service after multiple attempts. This could be due to network issues or file size. Please try again.")
+            except Exception as e:
+                logger.error(f"Error uploading to Gemini: {type(e).__name__}: {e}")
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+                raise ValueError(f"Failed to upload PDF to AI service: {str(e)}")
+            finally:
+                # Only clean up on last attempt or success
+                if attempt == max_retries - 1 or 'uploaded_file' in locals():
+                    if os.path.exists(tmp_path):
+                        os.unlink(tmp_path)
+    
+    def _identify_insurance_type(self, uploaded_file) -> str:
+        """Identify the type of insurance from document"""
+        prompt = """
+        Analyze this Indian insurance policy document and identify the insurance type.
+        
+        Return ONLY one of these exact values:
+        - LIFE (for Life Insurance, Term Insurance, Endowment, ULIP, Whole Life, etc.)
+        - HEALTH (for Health Insurance, Mediclaim, Family Floater, Critical Illness, etc.)
+        
+        Return only the insurance type code (LIFE or HEALTH), nothing else.
+        """
+        
+        response = self.model.generate_content([uploaded_file, prompt])
+        insurance_type = response.text.strip().upper()
+        
+        if insurance_type not in ['LIFE', 'HEALTH']:
+            insurance_type = 'LIFE'  # Default
+        
+        return insurance_type
+    
+    def _extract_life_insurance_data(self, uploaded_file) -> dict:
+        """Extract data specific to Life Insurance policies"""
+        prompt = """
+        You are an expert at analyzing Indian Life Insurance policy documents.
+        Extract the following information and return it as valid JSON.
+        
+        {
+            "policy_number": "string",
+            "insurer_name": "string (e.g., LIC, HDFC Life, ICICI Prudential, Max Life)",
+            "coverage": {
+                "sum_assured": number (in rupees, no commas),
+                "premium_amount": number (in rupees, no commas),
+                "premium_frequency": "MONTHLY/QUARTERLY/HALF_YEARLY/YEARLY",
+                "issue_date": "YYYY-MM-DD or null",
+                "start_date": "YYYY-MM-DD or null",
+                "end_date": "YYYY-MM-DD or null",
+                "maturity_date": "YYYY-MM-DD or null"
+            },
+            "nominees": [
+                {
+                    "name": "string",
+                    "relationship": "string (e.g., Spouse, Son, Daughter, Father, Mother)",
+                    "allocation_percentage": number (e.g., 100.00)
+                }
+            ],
+            "benefits": [
+                {
+                    "benefit_type": "BASE/RIDER/ADDON/BONUS",
+                    "name": "string",
+                    "description": "string or null",
+                    "coverage_amount": number or null
+                }
+            ],
+            "exclusions": [
+                {
+                    "title": "string",
+                    "description": "string"
+                }
+            ]
+        }
+        
+        Important:
+        - Use YYYY-MM-DD format for dates
+        - Remove commas from numbers
+        - If info not found, use null
+        - Include all nominees found
+        - List major benefits and riders
+        - List 3-5 key exclusions
+        
+        Return ONLY valid JSON.
+        """
+        
+        logger.info("Sending request to Gemini API for life insurance extraction")
+        response = self.model.generate_content([uploaded_file, prompt])
+        
+        logger.info("Received response from Gemini API")
+        logger.debug(f"Raw response text length: {len(response.text) if response.text else 0}")
+        logger.debug(f"Raw response text: {response.text[:1000]}...")  # Log first 1000 chars
+        
+        return self._parse_json_response(response.text)
+    
+    def _extract_health_insurance_data(self, uploaded_file) -> dict:
+        """Extract data specific to Health Insurance policies"""
+        prompt = """
+        You are an expert at analyzing Indian Health Insurance policy documents.
+        Extract the following information and return it as valid JSON.
+        
+        {
+            "policy_number": "string",
+            "insurer_name": "string (e.g., Star Health, HDFC Ergo, Care Health, Niva Bupa)",
+            "coverage": {
+                "sum_assured": number (in rupees, no commas),
+                "premium_amount": number (in rupees, no commas),
+                "premium_frequency": "MONTHLY/QUARTERLY/HALF_YEARLY/YEARLY",
+                "issue_date": "YYYY-MM-DD or null",
+                "start_date": "YYYY-MM-DD or null",
+                "end_date": "YYYY-MM-DD or null",
+                "maturity_date": "YYYY-MM-DD or null"
+            },
+            "health_details": {
+                "policy_type": "INDIVIDUAL/FAMILY/SENIOR_CITIZEN",
+                "room_rent_limit": number or null,
+                "co_payment_percentage": number or null,
+                "cashless_facility": true/false
+            },
+            "covered_members": [
+                {
+                    "name": "string",
+                    "relationship": "string (Self/Spouse/Son/Daughter/Father/Mother)",
+                    "age": number or null
+                }
+            ],
+            "benefits": [
+                {
+                    "benefit_type": "BASE/RIDER/ADDON",
+                    "name": "string (e.g., Hospitalization, Ambulance, OPD)",
+                    "description": "string or null",
+                    "coverage_amount": number or null
+                }
+            ],
+            "exclusions": [
+                {
+                    "title": "string",
+                    "description": "string"
+                }
+            ]
+        }
+        
+        Important:
+        - Use YYYY-MM-DD format for dates
+        - Remove commas from numbers
+        - If info not found, use null
+        - Include all family members
+        - List major benefits (hospitalization, day care, ambulance, etc.)
+        - List 5-7 key exclusions
+        
+        Return ONLY valid JSON.
+        """
+        
+        logger.info("Sending request to Gemini API for health insurance extraction")
+        response = self.model.generate_content([uploaded_file, prompt])
+        
+        logger.info("Received response from Gemini API")
+        logger.debug(f"Raw response text length: {len(response.text) if response.text else 0}")
+        logger.debug(f"Raw response text: {response.text[:1000]}...")  # Log first 1000 chars
+        
+        return self._parse_json_response(response.text)
+    
+    def _parse_json_response(self, response_text: str) -> dict:
+        """Parse JSON response from Gemini, handling markdown code blocks and trailing commas"""
+        logger.info("Parsing JSON response from Gemini")
+        logger.debug(f"Response text to parse (first 500 chars): {response_text[:500]}")
+        
+        try:
+            return json.loads(response_text)
+        except json.JSONDecodeError as e:
+            logger.warning(f"Initial JSON parse failed: {e}. Attempting to clean response.")
+            logger.debug(f"Full response text that failed to parse:\n{response_text}")
+            
+            # Try to extract JSON from markdown code blocks
+            clean_text = response_text.strip()
+            if clean_text.startswith('```json'):
+                clean_text = clean_text[7:]
+            elif clean_text.startswith('```'):
+                clean_text = clean_text[3:]
+            if clean_text.endswith('```'):
+                clean_text = clean_text[:-3]
+            
+            clean_text = clean_text.strip()
+            
+            # Try to fix common JSON issues
+            # Remove trailing commas before closing brackets/braces
+            import re
+            clean_text = re.sub(r',\s*([}\]])', r'\1', clean_text)
+            
+            try:
+                logger.info("Attempting to parse cleaned response text as JSON")
+                return json.loads(clean_text)
+            except json.JSONDecodeError as e:
+                logger.error(f"Cleaned JSON parse failed: {e}")
+                logger.error(f"Full cleaned text:\n{clean_text}")
+                raise ValueError(f"Could not parse JSON response from AI model. The AI returned invalid JSON: {str(e)}")
