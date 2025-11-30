@@ -47,7 +47,7 @@ class PolicyAIExtractor:
             raise e
     
     def _upload_to_gemini(self, file_field):
-        """Upload PDF file to Gemini API with retry logic"""
+        """Upload PDF file to Gemini API with robust retry/backoff"""
         # Create a temporary file to store the PDF
         with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
             # Read file content from S3 or local storage
@@ -65,8 +65,8 @@ class PolicyAIExtractor:
                 os.unlink(tmp_path)
             raise ValueError(f"PDF file too large ({file_size_mb:.2f} MB). Maximum size is 20 MB.")
         
-        max_retries = 3
-        retry_delay = 2
+        max_retries = 5
+        retry_delay = 3
         
         for attempt in range(max_retries):
             try:
@@ -89,10 +89,24 @@ class PolicyAIExtractor:
                 else:
                     raise ValueError("Failed to upload PDF to AI service after multiple attempts. This could be due to network issues or file size. Please try again.")
             except Exception as e:
-                logger.error(f"Error uploading to Gemini: {type(e).__name__}: {e}")
+                err_msg = str(e)
+                logger.error(f"Error uploading to Gemini: {type(e).__name__}: {err_msg}")
+                # Handle transient socket errors like "Can't assign requested address" or 503
+                transient = (
+                    'assign requested address' in err_msg.lower()
+                    or '503' in err_msg
+                    or 'temporarily unavailable' in err_msg.lower()
+                )
+                if transient and attempt < max_retries - 1:
+                    wait_for = retry_delay
+                    logger.info(f"Transient upload error. Backing off {wait_for}s and retrying...")
+                    time.sleep(wait_for)
+                    retry_delay = min(retry_delay * 2, 30)
+                    continue
+                # Non-transient or last attempt -> fail
                 if os.path.exists(tmp_path):
                     os.unlink(tmp_path)
-                raise ValueError(f"Failed to upload PDF to AI service: {str(e)}")
+                raise ValueError(f"Failed to upload PDF to AI service: {err_msg}")
             finally:
                 # Only clean up on last attempt or success
                 if attempt == max_retries - 1 or 'uploaded_file' in locals():
