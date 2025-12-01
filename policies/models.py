@@ -35,7 +35,7 @@ class Policy(models.Model):
     
     # Basic Information 
     name = models.CharField(max_length=255, help_text="Policy name or identifier")
-    document = models.FileField(upload_to='', storage=get_policy_storage)
+    document = models.FileField(upload_to='', storage=get_policy_storage())
     uploaded_at = models.DateTimeField(auto_now_add=True)
     
     # AI-Extracted Fields
