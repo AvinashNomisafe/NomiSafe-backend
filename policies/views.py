@@ -8,6 +8,7 @@ from django.shortcuts import get_object_or_404
 from decimal import Decimal
 from datetime import datetime
 import logging
+import threading
 
 from .models import (
     Policy, PolicyCoverage, PolicyNominee, PolicyBenefit,
@@ -23,83 +24,135 @@ from .ai_extractor import PolicyAIExtractor
 logger = logging.getLogger(__name__)
 
 
+def process_policy_extraction_background(policy_id):
+    """Background task to extract policy data using AI"""
+    try:
+        policy = Policy.objects.get(id=policy_id)
+        logger.info(f"[Background] Starting AI extraction for policy {policy_id}")
+        
+        # Update status to PROCESSING
+        policy.ai_extraction_status = 'PROCESSING'
+        policy.save(update_fields=['ai_extraction_status'])
+        
+        # Perform AI extraction
+        extractor = PolicyAIExtractor()
+        extracted_data = extractor.extract_policy_preview(policy.document)
+        
+        # Save extracted data
+        with transaction.atomic():
+            ExtractedDocument.objects.update_or_create(
+                policy=policy,
+                defaults={
+                    'raw_text': '',
+                    'structured_data': extracted_data,
+                    'extraction_model': 'gemini-2.0-flash-exp'
+                }
+            )
+            
+            policy.ai_extraction_status = 'COMPLETED'
+            policy.ai_extracted_at = timezone.now()
+            policy.ai_extraction_error = None
+            policy.save(update_fields=['ai_extraction_status', 'ai_extracted_at', 'ai_extraction_error'])
+        
+        logger.info(f"[Background] AI extraction completed for policy {policy_id}")
+        
+    except Exception as e:
+        error_message = str(e)
+        logger.error(f"[Background] AI extraction failed for policy {policy_id}: {error_message}", exc_info=True)
+        
+        try:
+            policy = Policy.objects.get(id=policy_id)
+            policy.ai_extraction_status = 'FAILED'
+            policy.ai_extraction_error = error_message[:1000]  # Limit error message length
+            policy.save(update_fields=['ai_extraction_status', 'ai_extraction_error'])
+        except:
+            pass
+
+
 class PolicyUploadView(APIView):
-    """Step 1: Upload PDF and get AI-extracted preview"""
+    """Step 1: Upload PDF immediately, start background AI extraction"""
     permission_classes = [permissions.IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request):
-        # Validate input but don't save to database yet
         serializer = PolicyUploadSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         
-        # Get the uploaded file and name without saving
         document_file = request.FILES.get('document')
         policy_name = serializer.validated_data['name']
         
-        logger.info(f"Processing policy upload: {policy_name}")
-        logger.info(f"File details - Name: {document_file.name}, Size: {document_file.size}, Content-Type: {document_file.content_type}")
+        logger.info(f"Uploading policy: {policy_name}")
+        logger.info(f"File: {document_file.name}, Size: {document_file.size}")
         
-        # Extract data using AI FIRST (before creating any database entries)
         try:
-            extractor = PolicyAIExtractor()
-            logger.info("Starting AI extraction...")
+            # Save policy immediately without waiting for AI
+            policy = Policy.objects.create(
+                user=request.user,
+                name=policy_name,
+                document=document_file,
+                ai_extraction_status='PENDING'
+            )
             
-            extracted_data = extractor.extract_policy_preview(document_file)
+            logger.info(f"Policy {policy.id} saved. Starting background AI extraction...")
             
-            logger.info("AI extraction successful")
-            logger.debug(f"Extracted data: {extracted_data}")
+            # Start background AI extraction
+            extraction_thread = threading.Thread(
+                target=process_policy_extraction_background,
+                args=(policy.id,),
+                daemon=True
+            )
+            extraction_thread.start()
             
-            # Only create database entries if AI extraction succeeds
-            with transaction.atomic():
-                policy = Policy.objects.create(
-                    user=request.user,
-                    name=policy_name,
-                    document=document_file
-                )
-                
-                logger.info(f"Policy created with ID: {policy.id}")
-                
-                # Store extracted data temporarily in ExtractedDocument
-                ExtractedDocument.objects.create(
-                    policy=policy,
-                    raw_text='',
-                    structured_data=extracted_data,
-                    extraction_model='gemini-2.0-flash-exp'
-                )
-                
-                logger.info("ExtractedDocument record created")
-            
-            # Return extracted data for user verification
+            # Return immediately
             return Response({
                 'id': policy.id,
                 'name': policy.name,
                 'uploaded_at': policy.uploaded_at,
-                'extracted_data': extracted_data,
-                'message': 'Policy uploaded. Please verify the extracted details.'
+                'ai_extraction_status': policy.ai_extraction_status,
+                'message': 'Policy uploaded successfully. AI extraction is processing in background.'
             }, status=status.HTTP_201_CREATED)
             
         except Exception as e:
-            # Don't create any database entries if extraction fails
-            error_message = str(e)
-            
-            logger.error(f"Policy extraction failed: {error_message}", exc_info=True)
-            logger.error(f"Error type: {type(e).__name__}")
-            
-            # Check if it's a rate limit error
-            if '429' in error_message or 'quota' in error_message.lower() or 'rate' in error_message.lower():
-                return Response({
-                    'error': 'API rate limit exceeded',
-                    'message': 'The AI service has temporary usage limits. Please wait a moment and try again.',
-                    'details': 'Rate limit exceeded. Please retry after a minute.'
-                }, status=status.HTTP_429_TOO_MANY_REQUESTS)
-            
-            # Generic error - no policy created, no document stored
+            logger.error(f"Policy upload failed: {str(e)}", exc_info=True)
             return Response({
-                'error': 'Failed to extract policy details',
-                'message': 'Could not process the uploaded document. Please try again later.',
-                'details': error_message
+                'error': 'Failed to upload policy',
+                'message': 'Could not save the document. Please try again.',
+                'details': str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class PolicyExtractionStatusView(APIView):
+    """Get AI extraction status for a policy"""
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request, policy_id):
+        try:
+            policy = Policy.objects.select_related('extracted_document').get(
+                id=policy_id, 
+                user=request.user
+            )
+        except Policy.DoesNotExist:
+            return Response(
+                {'error': 'Policy not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        response_data = {
+            'policy_id': policy.id,
+            'ai_extraction_status': policy.ai_extraction_status,
+            'ai_extracted_at': policy.ai_extracted_at,
+            'ai_extraction_error': policy.ai_extraction_error,
+        }
+        
+        # Include extracted data if available
+        if policy.ai_extraction_status == 'COMPLETED':
+            try:
+                extracted_doc = policy.extracted_document
+                response_data['extracted_data'] = extracted_doc.structured_data
+            except ExtractedDocument.DoesNotExist:
+                pass
+        
+        return Response(response_data, status=status.HTTP_200_OK)
 
 
 class PolicyVerifyView(APIView):
@@ -115,6 +168,13 @@ class PolicyVerifyView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         
+        # Check if AI extraction is completed
+        if policy.ai_extraction_status != 'COMPLETED':
+            return Response(
+                {'error': 'AI extraction not completed yet'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
         # Get verified data from request
         verified_data = request.data
         
@@ -123,7 +183,9 @@ class PolicyVerifyView(APIView):
                 # Save verified data to models
                 self._save_verified_data(policy, verified_data)
                 
-                # Mark as processed
+                # Mark as verified by user
+                policy.is_verified_by_user = True
+                policy.verified_at = timezone.now()
                 policy.is_processed = True
                 policy.last_processed = timezone.now()
                 policy.processing_error = None
@@ -253,29 +315,35 @@ class PolicyListView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     
     def get(self, request):
-        # Get all processed policies for the user
+        # Get ALL policies (including those still being processed)
         policies = Policy.objects.filter(
             user=request.user,
-            is_active=True,
-            is_processed=True
+            is_active=True
         ).select_related('coverage').order_by('-uploaded_at')
         
         # Separate by insurance type
         health_policies = []
         life_policies = []
+        unprocessed_policies = []
         
         for policy in policies:
             serializer = PolicyListSerializer(policy, context={'request': request})
             policy_data = serializer.data
             
-            if policy.insurance_type == 'HEALTH':
-                health_policies.append(policy_data)
-            elif policy.insurance_type == 'LIFE':
-                life_policies.append(policy_data)
+            # Only group by type if verified
+            if policy.is_verified_by_user and policy.insurance_type:
+                if policy.insurance_type == 'HEALTH':
+                    health_policies.append(policy_data)
+                elif policy.insurance_type == 'LIFE':
+                    life_policies.append(policy_data)
+            else:
+                # Unprocessed/unverified policies
+                unprocessed_policies.append(policy_data)
         
         return Response({
             'health': health_policies,
-            'life': life_policies
+            'life': life_policies,
+            'unprocessed': unprocessed_policies
         }, status=status.HTTP_200_OK)
 
 
@@ -291,6 +359,13 @@ class PolicyDetailView(APIView):
             id=policy_id,
             user=request.user
         )
+        
+        # Only allow access to verified policies
+        if not policy.is_verified_by_user:
+            return Response(
+                {'error': 'Policy details not verified yet'},
+                status=status.HTTP_403_FORBIDDEN
+            )
         
         serializer = PolicyDetailSerializer(policy, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)

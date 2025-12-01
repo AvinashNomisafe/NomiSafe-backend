@@ -20,6 +20,13 @@ class Policy(models.Model):
         ('HEALTH', 'Health Insurance'),
     ]
     
+    AI_EXTRACTION_STATUS = [
+        ('PENDING', 'Pending'),
+        ('PROCESSING', 'Processing'),
+        ('COMPLETED', 'Completed'),
+        ('FAILED', 'Failed'),
+    ]
+    
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, 
         on_delete=models.CASCADE, 
@@ -36,7 +43,21 @@ class Policy(models.Model):
     policy_number = models.CharField(max_length=100, blank=True, null=True, db_index=True)
     insurer_name = models.CharField(max_length=255, blank=True, null=True)
     
-    # Status
+    # AI Extraction Status
+    ai_extraction_status = models.CharField(
+        max_length=20, 
+        choices=AI_EXTRACTION_STATUS, 
+        default='PENDING',
+        db_index=True
+    )
+    ai_extracted_at = models.DateTimeField(blank=True, null=True)
+    ai_extraction_error = models.TextField(blank=True, null=True)
+    
+    # User Verification
+    is_verified_by_user = models.BooleanField(default=False, db_index=True)
+    verified_at = models.DateTimeField(blank=True, null=True)
+    
+    # Status (Legacy - keeping for compatibility)
     is_active = models.BooleanField(default=True)
     is_processed = models.BooleanField(default=False)
     processing_error = models.TextField(blank=True, null=True)

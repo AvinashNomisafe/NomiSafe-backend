@@ -29,13 +29,16 @@ class PolicyListSerializer(serializers.ModelSerializer):
     premium_amount = serializers.SerializerMethodField()
     end_date = serializers.SerializerMethodField()
     is_expired = serializers.SerializerMethodField()
+    ai_extraction_status = serializers.CharField(read_only=True)
+    is_verified_by_user = serializers.BooleanField(read_only=True)
     
     class Meta:
         model = Policy
         fields = [
             'id', 'name', 'insurance_type', 'policy_number', 
             'insurer_name', 'sum_assured', 'premium_amount',
-            'end_date', 'is_expired', 'uploaded_at'
+            'end_date', 'is_expired', 'uploaded_at',
+            'ai_extraction_status', 'is_verified_by_user'
         ]
     
     def get_sum_assured(self, obj):
