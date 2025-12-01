@@ -315,6 +315,9 @@ class PolicyListView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     
     def get(self, request):
+        # Get optional insurance_type filter from query params
+        insurance_type_filter = request.query_params.get('insurance_type', None)
+        
         # Get ALL policies (including those still being processed)
         policies = Policy.objects.filter(
             user=request.user,
@@ -340,6 +343,22 @@ class PolicyListView(APIView):
                 # Unprocessed/unverified policies
                 unprocessed_policies.append(policy_data)
         
+        # If insurance_type filter is provided, return only that type + unprocessed
+        if insurance_type_filter:
+            if insurance_type_filter.upper() == 'HEALTH':
+                return Response({
+                    'health': health_policies,
+                    'life': [],
+                    'unprocessed': unprocessed_policies
+                }, status=status.HTTP_200_OK)
+            elif insurance_type_filter.upper() == 'LIFE':
+                return Response({
+                    'health': [],
+                    'life': life_policies,
+                    'unprocessed': unprocessed_policies
+                }, status=status.HTTP_200_OK)
+        
+        # Return all if no filter
         return Response({
             'health': health_policies,
             'life': life_policies,
