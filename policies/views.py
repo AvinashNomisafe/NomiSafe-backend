@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.utils import timezone
 from django.db import transaction
+from django.shortcuts import get_object_or_404
 from decimal import Decimal
 from datetime import datetime
 import logging
@@ -13,7 +14,9 @@ from .models import (
     PolicyExclusion, HealthInsuranceDetails, CoveredMember,
     ExtractedDocument
 )
-from .serializers import PolicyUploadSerializer
+from .serializers import (
+    PolicyUploadSerializer, PolicyListSerializer, PolicyDetailSerializer
+)
 from .ai_extractor import PolicyAIExtractor
 
 # Configure logger
@@ -243,4 +246,52 @@ class PolicyVerifyView(APIView):
             return datetime.strptime(date_str, '%Y-%m-%d').date()
         except:
             return None
+
+
+class PolicyListView(APIView):
+    """List all policies for the authenticated user, grouped by type"""
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request):
+        # Get all processed policies for the user
+        policies = Policy.objects.filter(
+            user=request.user,
+            is_active=True,
+            is_processed=True
+        ).select_related('coverage').order_by('-uploaded_at')
+        
+        # Separate by insurance type
+        health_policies = []
+        life_policies = []
+        
+        for policy in policies:
+            serializer = PolicyListSerializer(policy, context={'request': request})
+            policy_data = serializer.data
+            
+            if policy.insurance_type == 'HEALTH':
+                health_policies.append(policy_data)
+            elif policy.insurance_type == 'LIFE':
+                life_policies.append(policy_data)
+        
+        return Response({
+            'health': health_policies,
+            'life': life_policies
+        }, status=status.HTTP_200_OK)
+
+
+class PolicyDetailView(APIView):
+    """Get detailed information about a specific policy"""
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request, policy_id):
+        policy = get_object_or_404(
+            Policy.objects.select_related('coverage', 'health_details').prefetch_related(
+                'nominees', 'benefits', 'exclusions', 'health_details__covered_members'
+            ),
+            id=policy_id,
+            user=request.user
+        )
+        
+        serializer = PolicyDetailSerializer(policy, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
