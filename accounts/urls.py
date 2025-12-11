@@ -6,6 +6,7 @@ from rest_framework_simplejwt.views import (
 from .views import (
     OTPRequestView, 
     OTPVerifyView,
+    UserProfileView,
 )
 
 urlpatterns = [
@@ -13,4 +14,5 @@ urlpatterns = [
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('auth/otp/request/', OTPRequestView.as_view(), name='otp_request'),
     path('auth/otp/verify/', OTPVerifyView.as_view(), name='otp_verify'),
+    path('profile/', UserProfileView.as_view(), name='user_profile'),
 ]

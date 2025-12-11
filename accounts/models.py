@@ -33,6 +33,31 @@ class User(AbstractBaseUser, PermissionsMixin):
         return self.phone_number
 
 
+class UserProfile(models.Model):
+    """Extended user profile information"""
+    user = models.OneToOneField(
+        User, 
+        on_delete=models.CASCADE, 
+        related_name='profile',
+        primary_key=True
+    )
+    name = models.CharField(max_length=255, blank=True, null=True)
+    date_of_birth = models.DateField(blank=True, null=True)
+    alternate_phone = models.CharField(max_length=24, blank=True, null=True)
+    
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'user_profile'
+        verbose_name = 'User Profile'
+        verbose_name_plural = 'User Profiles'
+    
+    def __str__(self):
+        return f"Profile for {self.user.phone_number}"
+
+
 class OTP(models.Model):
     phone_number = models.CharField(max_length=32, db_index=True)
     otp_hash = models.CharField(max_length=128)

@@ -16,6 +16,8 @@ import phonenumbers
 from .serializers import (
     OTPRequestSerializer, 
     OTPVerifySerializer,
+    UserProfileSerializer,
+    UserProfileUpdateSerializer,
 )
 from .otp_utils import generate_code, hash_otp, default_otp_ttl
 from .models import OTP
@@ -89,5 +91,57 @@ class OTPVerifyView(APIView):
         user, created = User.objects.get_or_create(phone_number=phone)
         refresh = RefreshToken.for_user(user)
         return Response({'id': user.id, 'phone_number': user.phone_number, 'access': str(refresh.access_token), 'refresh': str(refresh)}, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+
+class UserProfileView(APIView):
+    """Get or update user profile"""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        """Get current user's profile"""
+        # Ensure profile exists
+        from .models import UserProfile
+        UserProfile.objects.get_or_create(user=request.user)
+        
+        serializer = UserProfileSerializer(request.user)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    def put(self, request):
+        """Update current user's profile"""
+        return self._update_profile(request, partial=False)
+    
+    def patch(self, request):
+        """Partially update current user's profile"""
+        return self._update_profile(request, partial=True)
+    
+    def _update_profile(self, request, partial=True):
+        """Helper method to update user profile"""
+        from .models import UserProfile
+        
+        serializer = UserProfileUpdateSerializer(
+            data=request.data,
+            partial=partial
+        )
+        serializer.is_valid(raise_exception=True)
+        
+        validated_data = serializer.validated_data
+        
+        # Update User model fields (email)
+        if 'email' in validated_data:
+            request.user.email = validated_data.pop('email') or None
+            request.user.save(update_fields=['email'])
+        
+        # Update or create UserProfile
+        profile, created = UserProfile.objects.get_or_create(user=request.user)
+        
+        # Update profile fields
+        for field, value in validated_data.items():
+            setattr(profile, field, value or None)
+        
+        profile.save()
+        
+        # Return updated profile
+        response_serializer = UserProfileSerializer(request.user)
+        return Response(response_serializer.data, status=status.HTTP_200_OK)
 
 
