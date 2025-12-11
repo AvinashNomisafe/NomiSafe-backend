@@ -27,16 +27,21 @@ class PolicyAIExtractor:
             # Upload PDF directly to Gemini
             uploaded_file = self._upload_to_gemini(policy_document)
             
-            # Step 1: Identify insurance type
+            # Step 1: Validate document is an insurance policy
+            is_valid, validation_msg = self._validate_insurance_document(uploaded_file)
+            if not is_valid:
+                raise ValueError(validation_msg)
+            
+            # Step 2: Identify insurance type
             insurance_type = self._identify_insurance_type(uploaded_file)
             
-            # Step 2: Extract data based on type
+            # Step 3: Extract data based on type
             if insurance_type == 'LIFE':
                 extracted_data = self._extract_life_insurance_data(uploaded_file)
             elif insurance_type == 'HEALTH':
                 extracted_data = self._extract_health_insurance_data(uploaded_file)
             else:
-                raise ValueError(f"Unsupported insurance type: {insurance_type}")
+                raise ValueError(f"This document doesn't appear to be a valid Health or Life insurance policy. Please upload only insurance policy documents.")
             
             # Add insurance type to response
             extracted_data['insurance_type'] = insurance_type
@@ -113,23 +118,65 @@ class PolicyAIExtractor:
                     if os.path.exists(tmp_path):
                         os.unlink(tmp_path)
     
+    def _validate_insurance_document(self, uploaded_file) -> tuple:
+        """
+        Validate if the uploaded document is actually an insurance policy.
+        Returns (is_valid: bool, message: str)
+        """
+        prompt = """
+        Analyze this document carefully and determine if it is an Indian Insurance Policy document.
+        
+        An insurance policy document should contain:
+        - Policy number
+        - Insurance company name
+        - Premium details or sum assured
+        - Policy terms and conditions
+        - Coverage details
+        
+        This is NOT an insurance policy if it is:
+        - A bill, invoice, or receipt
+        - A bank statement
+        - An ID card (Aadhaar, PAN, etc.)
+        - A medical prescription or report
+        - A general document or letter
+        - Any other non-insurance document
+        
+        Respond with ONLY:
+        "VALID" if this is a Life Insurance or Health Insurance policy document
+        "INVALID: <reason>" if this is not an insurance policy (e.g., "INVALID: This appears to be a medical prescription")
+        """
+        
+        response = self.model.generate_content([uploaded_file, prompt])
+        result = response.text.strip()
+        
+        if result.upper().startswith('VALID'):
+            return (True, "Valid insurance policy document")
+        elif result.upper().startswith('INVALID'):
+            # Extract reason after "INVALID:"
+            reason = result.split(':', 1)[1].strip() if ':' in result else "This document is not an insurance policy"
+            return (False, f"Invalid document: {reason}. Please upload only Health or Life insurance policy documents.")
+        else:
+            # Unclear response, be conservative
+            return (False, "Unable to verify this as a valid insurance policy document. Please upload only Health or Life insurance policy documents.")
+    
     def _identify_insurance_type(self, uploaded_file) -> str:
         """Identify the type of insurance from document"""
         prompt = """
         Analyze this Indian insurance policy document and identify the insurance type.
         
         Return ONLY one of these exact values:
-        - LIFE (for Life Insurance, Term Insurance, Endowment, ULIP, Whole Life, etc.)
-        - HEALTH (for Health Insurance, Mediclaim, Family Floater, Critical Illness, etc.)
+        - LIFE (for Life Insurance, Term Insurance, Endowment, ULIP, Whole Life, Money Back, etc.)
+        - HEALTH (for Health Insurance, Mediclaim, Family Floater, Critical Illness, Top-up, etc.)
+        - OTHER (if it's neither life nor health insurance)
         
-        Return only the insurance type code (LIFE or HEALTH), nothing else.
+        Return only the insurance type code (LIFE, HEALTH, or OTHER), nothing else.
         """
         
         response = self.model.generate_content([uploaded_file, prompt])
         insurance_type = response.text.strip().upper()
         
         if insurance_type not in ['LIFE', 'HEALTH']:
-            insurance_type = 'LIFE'  # Default
+            return 'OTHER'  # Will be rejected
         
         return insurance_type
     
@@ -146,6 +193,7 @@ class PolicyAIExtractor:
                 "sum_assured": number (in rupees, no commas),
                 "premium_amount": number (in rupees, no commas),
                 "premium_frequency": "MONTHLY/QUARTERLY/HALF_YEARLY/YEARLY",
+                "maturity_amount": number or null (guaranteed amount payable at maturity, for endowment/money-back policies),
                 "issue_date": "YYYY-MM-DD or null",
                 "start_date": "YYYY-MM-DD or null",
                 "end_date": "YYYY-MM-DD or null",
@@ -207,6 +255,7 @@ class PolicyAIExtractor:
                 "sum_assured": number (in rupees, no commas),
                 "premium_amount": number (in rupees, no commas),
                 "premium_frequency": "MONTHLY/QUARTERLY/HALF_YEARLY/YEARLY",
+                "maturity_amount": number or null (if policy has maturity benefit),
                 "issue_date": "YYYY-MM-DD or null",
                 "start_date": "YYYY-MM-DD or null",
                 "end_date": "YYYY-MM-DD or null",

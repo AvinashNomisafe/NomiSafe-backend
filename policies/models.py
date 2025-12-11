@@ -101,6 +101,13 @@ class PolicyCoverage(models.Model):
         blank=True, 
         null=True
     )
+    maturity_amount = models.DecimalField(
+        max_digits=12, 
+        decimal_places=2, 
+        blank=True, 
+        null=True,
+        help_text="Amount payable on maturity (guaranteed returns)"
+    )
     
     # Important Dates
     issue_date = models.DateField(blank=True, null=True)

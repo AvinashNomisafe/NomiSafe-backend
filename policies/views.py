@@ -5,8 +5,9 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from django.utils import timezone
 from django.db import transaction
 from django.shortcuts import get_object_or_404
+from django.db.models import Sum, Count, Q, Avg
 from decimal import Decimal
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 import threading
 
@@ -219,6 +220,7 @@ class PolicyVerifyView(APIView):
                 'sum_assured': self._to_decimal(coverage_data.get('sum_assured')),
                 'premium_amount': self._to_decimal(coverage_data.get('premium_amount')),
                 'premium_frequency': coverage_data.get('premium_frequency'),
+                'maturity_amount': self._to_decimal(coverage_data.get('maturity_amount')),
                 'issue_date': self._parse_date(coverage_data.get('issue_date')),
                 'start_date': self._parse_date(coverage_data.get('start_date')),
                 'end_date': self._parse_date(coverage_data.get('end_date')),
@@ -388,4 +390,182 @@ class PolicyDetailView(APIView):
         
         serializer = PolicyDetailSerializer(policy, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class DashboardStatsView(APIView):
+    """Get dashboard statistics and analytics"""
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request):
+        user = request.user
+        today = timezone.now().date()
+        
+        # Get all verified policies
+        all_policies = Policy.objects.filter(
+            user=user,
+            is_verified_by_user=True
+        ).select_related('coverage')
+        
+        life_policies = all_policies.filter(insurance_type='LIFE')
+        health_policies = all_policies.filter(insurance_type='HEALTH')
+        
+        # Calculate totals
+        life_stats = self._calculate_insurance_stats(life_policies, today)
+        health_stats = self._calculate_insurance_stats(health_policies, today)
+        
+        # Upcoming renewals (policies expiring in next 90 days)
+        upcoming_renewals = all_policies.filter(
+            coverage__end_date__gte=today,
+            coverage__end_date__lte=today + timedelta(days=90)
+        ).select_related('coverage').order_by('coverage__end_date')
+        
+        renewals_data = [{
+            'id': p.id,
+            'name': p.name,
+            'insurance_type': p.insurance_type,
+            'insurer_name': p.insurer_name,
+            'end_date': p.coverage.end_date,
+            'days_remaining': (p.coverage.end_date - today).days if p.coverage.end_date else None,
+            'premium_amount': float(p.coverage.premium_amount) if p.coverage.premium_amount else None
+        } for p in upcoming_renewals if hasattr(p, 'coverage')]
+        
+        # Recent policies (last 5 added)
+        recent_policies = all_policies.order_by('-uploaded_at')[:5]
+        recent_data = [{
+            'id': p.id,
+            'name': p.name,
+            'insurance_type': p.insurance_type,
+            'insurer_name': p.insurer_name,
+            'uploaded_at': p.uploaded_at,
+            'sum_assured': float(p.coverage.sum_assured) if hasattr(p, 'coverage') and p.coverage.sum_assured else None
+        } for p in recent_policies]
+        
+        # Monthly premium breakdown
+        monthly_premium = self._calculate_monthly_premium(all_policies)
+        
+        return Response({
+            'summary': {
+                'total_policies': all_policies.count(),
+                'life_insurance_count': life_policies.count(),
+                'health_insurance_count': health_policies.count(),
+                'total_monthly_premium': monthly_premium,
+            },
+            'life_insurance': life_stats,
+            'health_insurance': health_stats,
+            'upcoming_renewals': renewals_data,
+            'recent_policies': recent_data,
+            'profile_completion': self._get_profile_completion(user),
+        }, status=status.HTTP_200_OK)
+    
+    def _calculate_insurance_stats(self, policies, today):
+        """Calculate statistics for insurance type"""
+        total_policies = policies.count()
+        
+        if total_policies == 0:
+            return {
+                'total_policies': 0,
+                'total_sum_assured': 0,
+                'total_premium': 0,
+                'active_policies': 0,
+                'expired_policies': 0,
+                'total_maturity_amount': 0,
+            }
+        
+        # Get coverage data
+        coverages = PolicyCoverage.objects.filter(policy__in=policies)
+        
+        # Calculate totals
+        sum_assured_total = coverages.aggregate(
+            total=Sum('sum_assured')
+        )['total'] or Decimal('0')
+        
+        maturity_total = coverages.aggregate(
+            total=Sum('maturity_amount')
+        )['total'] or Decimal('0')
+        
+        # Calculate total monthly premium (convert all to monthly)
+        total_premium = Decimal('0')
+        for coverage in coverages:
+            if coverage.premium_amount:
+                monthly = self._convert_to_monthly_premium(
+                    coverage.premium_amount,
+                    coverage.premium_frequency
+                )
+                total_premium += monthly
+        
+        # Count active vs expired
+        active_count = coverages.filter(
+            Q(end_date__gte=today) | Q(end_date__isnull=True)
+        ).count()
+        
+        expired_count = coverages.filter(end_date__lt=today).count()
+        
+        return {
+            'total_policies': total_policies,
+            'total_sum_assured': float(sum_assured_total),
+            'total_premium': float(total_premium),
+            'active_policies': active_count,
+            'expired_policies': expired_count,
+            'total_maturity_amount': float(maturity_total),
+        }
+    
+    def _calculate_monthly_premium(self, policies):
+        """Calculate total monthly premium across all policies"""
+        total = Decimal('0')
+        
+        for policy in policies:
+            if hasattr(policy, 'coverage') and policy.coverage.premium_amount:
+                monthly = self._convert_to_monthly_premium(
+                    policy.coverage.premium_amount,
+                    policy.coverage.premium_frequency
+                )
+                total += monthly
+        
+        return float(total)
+    
+    def _convert_to_monthly_premium(self, amount, frequency):
+        """Convert premium to monthly equivalent"""
+        if not amount:
+            return Decimal('0')
+        
+        amount = Decimal(str(amount))
+        
+        if frequency == 'MONTHLY':
+            return amount
+        elif frequency == 'QUARTERLY':
+            return amount / Decimal('3')
+        elif frequency == 'HALF_YEARLY':
+            return amount / Decimal('6')
+        elif frequency == 'YEARLY':
+            return amount / Decimal('12')
+        else:
+            return Decimal('0')
+    
+    def _get_profile_completion(self, user):
+        """Calculate profile completion percentage"""
+        completed = 0
+        total = 4
+        
+        # Check profile fields
+        if hasattr(user, 'profile'):
+            profile = user.profile
+            if profile.name:
+                completed += 1
+            if profile.date_of_birth:
+                completed += 1
+        
+        # Check email
+        if user.email:
+            completed += 1
+        
+        # Check Aadhaar verification
+        if user.is_aadhaar_verified:
+            completed += 1
+        
+        return {
+            'completed': completed,
+            'total': total,
+            'percentage': int((completed / total) * 100)
+        }
+
 

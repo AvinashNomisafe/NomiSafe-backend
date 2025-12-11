@@ -102,8 +102,8 @@ class PolicyCoverageSerializer(serializers.ModelSerializer):
         model = PolicyCoverage
         fields = [
             'id', 'sum_assured', 'premium_amount', 'premium_frequency',
-            'issue_date', 'start_date', 'end_date', 'maturity_date',
-            'is_expired', 'days_until_expiry'
+            'maturity_amount', 'issue_date', 'start_date', 'end_date', 
+            'maturity_date', 'is_expired', 'days_until_expiry'
         ]
 
 
