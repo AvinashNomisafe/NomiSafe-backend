@@ -32,6 +32,14 @@ def normalize_phone(phone: str):
         return phone
 
 
+class DeleteAccountView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request):
+        user = request.user
+        user.delete()
+        return Response({'detail': 'Account deleted successfully.'}, status=status.HTTP_200_OK)
+
 class OTPRequestView(APIView):
     authentication_classes = []
     permission_classes = [AllowAny]
