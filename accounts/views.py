@@ -71,6 +71,13 @@ class OTPVerifyView(APIView):
         phone = normalize_phone(serializer.validated_data['phone_number'])
         code = serializer.validated_data['otp']
 
+        # Bypass OTP for dummy account
+        if phone in ('+918003780822', '8003780822') and code == '197325':
+            User = get_user_model()
+            user, created = User.objects.get_or_create(phone_number=phone)
+            refresh = RefreshToken.for_user(user)
+            return Response({'id': user.id, 'phone_number': user.phone_number, 'access': str(refresh.access_token), 'refresh': str(refresh)}, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
         otp = OTP.objects.filter(phone_number=phone, used=False, expires_at__gt=timezone.now()).order_by('-created_at').first()
         if not otp:
             return Response({'detail': 'Invalid or expired OTP'}, status=status.HTTP_400_BAD_REQUEST)
