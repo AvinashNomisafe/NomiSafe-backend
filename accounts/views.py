@@ -25,10 +25,23 @@ from .sms_provider import send_sms
 
 
 def normalize_phone(phone: str):
+    """
+    Normalize phone number to E164 format.
+    Assumes India (+91) as default region if no country code is provided.
+    """
     try:
-        p = phonenumbers.parse(phone, None)
-        return phonenumbers.format_number(p, phonenumbers.PhoneNumberFormat.E164)
-    except Exception:
+        # If phone doesn't start with '+', assume it's an Indian number
+        if not phone.startswith('+'):
+            # Try parsing with 'IN' as default region
+            p = phonenumbers.parse(phone, 'IN')
+        else:
+            p = phonenumbers.parse(phone, None)
+        
+        normalized = phonenumbers.format_number(p, phonenumbers.PhoneNumberFormat.E164)
+        print(f"[Phone Normalization] Input: {phone} -> Output: {normalized}")
+        return normalized
+    except Exception as e:
+        print(f"[Phone Normalization] Failed for {phone}: {e}")
         return phone
 
 
@@ -47,7 +60,10 @@ class OTPRequestView(APIView):
     def post(self, request):
         serializer = OTPRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        phone = normalize_phone(serializer.validated_data['phone_number'])
+        raw_phone = serializer.validated_data['phone_number']
+        phone = normalize_phone(raw_phone)
+        
+        print(f"[OTP Request] Raw: {raw_phone}, Normalized: {phone}")
 
         # Generate code and store hashed
         code = generate_code(length=getattr(settings, 'OTP_LENGTH', 6))
@@ -59,11 +75,14 @@ class OTPRequestView(APIView):
         message = f"Your NomiSafe verification code is {code}. It expires in {default_otp_ttl()//60} minutes."
 
         try:
+            print(f"[SMS] Sending to {phone}: {message}")
             provider_id = send_sms(phone, message)
+            print(f"[SMS] Success! Provider ID: {provider_id}")
             otp.provider_id = provider_id
             otp.save(update_fields=['provider_id'])
-        except Exception:
+        except Exception as e:
             # Keep generic response to avoid enumeration and leak
+            print(f"[SMS] Failed to send to {phone}: {e}")
             pass
 
         return Response({'detail': 'If allowed, an OTP was sent.'}, status=status.HTTP_202_ACCEPTED)
