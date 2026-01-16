@@ -11,7 +11,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'change-me')
 DEBUG = os.environ.get('DJANGO_DEBUG', '1') == '1'
 # Comma separated hostnames/IPs, fallback to wildcard
-ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', '*').split(',')
+ALLOWED_HOSTS = [
+    "api.nomisafe.in",
+    "15.207.247.24",
+    "localhost",
+    "127.0.0.1"
+]
 CSRF_TRUSTED_ORIGINS = [origin for origin in os.environ.get('DJANGO_CSRF_TRUSTED_ORIGINS', '').split(',') if origin]
 
 INSTALLED_APPS = [
