@@ -4,6 +4,8 @@ from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 from rest_framework.views import APIView
 from rest_framework.decorators import api_view, permission_classes
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status, permissions
@@ -53,6 +55,7 @@ class DeleteAccountView(APIView):
         user.delete()
         return Response({'detail': 'Account deleted successfully.'}, status=status.HTTP_200_OK)
 
+@method_decorator(csrf_exempt, name='dispatch')
 class OTPRequestView(APIView):
     authentication_classes = []
     permission_classes = [AllowAny]
