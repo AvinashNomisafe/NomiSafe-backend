@@ -18,6 +18,7 @@ class Policy(models.Model):
     INSURANCE_TYPES = [
         ('LIFE', 'Life Insurance'),
         ('HEALTH', 'Health Insurance'),
+        ('MOTOR', 'Motor Insurance'),
     ]
     
     AI_EXTRACTION_STATUS = [
@@ -249,6 +250,64 @@ class CoveredMember(models.Model):
     
     def __str__(self):
         return f"{self.name} - {self.relationship}"
+
+
+class MotorInsuranceDetails(models.Model):
+    """Specific details for motor/vehicle insurance"""
+    VEHICLE_TYPES = [
+        ('TWO_WHEELER', 'Two Wheeler'),
+        ('FOUR_WHEELER', 'Four Wheeler'),
+        ('COMMERCIAL', 'Commercial Vehicle'),
+    ]
+    
+    POLICY_TYPES = [
+        ('COMPREHENSIVE', 'Comprehensive'),
+        ('THIRD_PARTY', 'Third Party'),
+        ('STANDALONE_OD', 'Standalone Own Damage'),
+    ]
+    
+    policy = models.OneToOneField(
+        Policy, 
+        on_delete=models.CASCADE, 
+        related_name='motor_details'
+    )
+    
+    # Vehicle Details
+    vehicle_type = models.CharField(max_length=20, choices=VEHICLE_TYPES, blank=True, null=True)
+    policy_type = models.CharField(max_length=20, choices=POLICY_TYPES, blank=True, null=True)
+    vehicle_make = models.CharField(max_length=100, blank=True, null=True, help_text="e.g., Maruti, Honda, Hyundai")
+    vehicle_model = models.CharField(max_length=100, blank=True, null=True, help_text="e.g., Swift, City, i20")
+    registration_number = models.CharField(max_length=20, blank=True, null=True)
+    engine_number = models.CharField(max_length=50, blank=True, null=True)
+    chassis_number = models.CharField(max_length=50, blank=True, null=True)
+    year_of_manufacture = models.IntegerField(blank=True, null=True)
+    
+    # Coverage Details
+    idv = models.DecimalField(
+        max_digits=10, 
+        decimal_places=2, 
+        blank=True, 
+        null=True,
+        help_text="Insured Declared Value"
+    )
+    own_damage_cover = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
+    third_party_cover = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
+    
+    # Additional Details
+    ncb_percentage = models.DecimalField(
+        max_digits=5, 
+        decimal_places=2, 
+        blank=True, 
+        null=True,
+        help_text="No Claim Bonus percentage"
+    )
+    previous_policy_number = models.CharField(max_length=100, blank=True, null=True)
+    has_zero_depreciation = models.BooleanField(default=False)
+    has_engine_protection = models.BooleanField(default=False)
+    has_roadside_assistance = models.BooleanField(default=False)
+    
+    def __str__(self):
+        return f"Motor Details - {self.policy.name}"
 
 
 class ExtractedDocument(models.Model):

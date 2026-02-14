@@ -292,6 +292,32 @@ class PolicyVerifyView(APIView):
                             relationship=member_data.get('relationship', ''),
                             age=member_data.get('age')
                         )
+        
+        # Save motor-specific details
+        if policy.insurance_type == 'MOTOR' and 'motor_details' in data:
+            from .models import MotorInsuranceDetails
+            motor_data = data['motor_details']
+            MotorInsuranceDetails.objects.update_or_create(
+                policy=policy,
+                defaults={
+                    'vehicle_type': motor_data.get('vehicle_type'),
+                    'policy_type': motor_data.get('policy_type'),
+                    'vehicle_make': motor_data.get('vehicle_make'),
+                    'vehicle_model': motor_data.get('vehicle_model'),
+                    'registration_number': motor_data.get('registration_number'),
+                    'engine_number': motor_data.get('engine_number'),
+                    'chassis_number': motor_data.get('chassis_number'),
+                    'year_of_manufacture': motor_data.get('year_of_manufacture'),
+                    'idv': self._to_decimal(motor_data.get('idv')),
+                    'own_damage_cover': self._to_decimal(motor_data.get('own_damage_cover')),
+                    'third_party_cover': self._to_decimal(motor_data.get('third_party_cover')),
+                    'ncb_percentage': self._to_decimal(motor_data.get('ncb_percentage')),
+                    'previous_policy_number': motor_data.get('previous_policy_number'),
+                    'has_zero_depreciation': motor_data.get('has_zero_depreciation', False),
+                    'has_engine_protection': motor_data.get('has_engine_protection', False),
+                    'has_roadside_assistance': motor_data.get('has_roadside_assistance', False),
+                }
+            )
     
     def _to_decimal(self, value):
         """Convert value to Decimal"""
@@ -329,6 +355,7 @@ class PolicyListView(APIView):
         # Separate by insurance type
         health_policies = []
         life_policies = []
+        motor_policies = []
         unprocessed_policies = []
         
         for policy in policies:
@@ -341,6 +368,8 @@ class PolicyListView(APIView):
                     health_policies.append(policy_data)
                 elif policy.insurance_type == 'LIFE':
                     life_policies.append(policy_data)
+                elif policy.insurance_type == 'MOTOR':
+                    motor_policies.append(policy_data)
             else:
                 # Unprocessed/unverified policies
                 unprocessed_policies.append(policy_data)
@@ -351,12 +380,21 @@ class PolicyListView(APIView):
                 return Response({
                     'health': health_policies,
                     'life': [],
+                    'motor': [],
                     'unprocessed': unprocessed_policies
                 }, status=status.HTTP_200_OK)
             elif insurance_type_filter.upper() == 'LIFE':
                 return Response({
                     'health': [],
                     'life': life_policies,
+                    'motor': [],
+                    'unprocessed': unprocessed_policies
+                }, status=status.HTTP_200_OK)
+            elif insurance_type_filter.upper() == 'MOTOR':
+                return Response({
+                    'health': [],
+                    'life': [],
+                    'motor': motor_policies,
                     'unprocessed': unprocessed_policies
                 }, status=status.HTTP_200_OK)
         
@@ -364,6 +402,7 @@ class PolicyListView(APIView):
         return Response({
             'health': health_policies,
             'life': life_policies,
+            'motor': motor_policies,
             'unprocessed': unprocessed_policies
         }, status=status.HTTP_200_OK)
 
@@ -374,7 +413,7 @@ class PolicyDetailView(APIView):
     
     def get(self, request, policy_id):
         policy = get_object_or_404(
-            Policy.objects.select_related('coverage', 'health_details').prefetch_related(
+            Policy.objects.select_related('coverage', 'health_details', 'motor_details').prefetch_related(
                 'nominees', 'benefits', 'exclusions', 'health_details__covered_members'
             ),
             id=policy_id,
@@ -408,10 +447,12 @@ class DashboardStatsView(APIView):
         
         life_policies = all_policies.filter(insurance_type='LIFE')
         health_policies = all_policies.filter(insurance_type='HEALTH')
+        motor_policies = all_policies.filter(insurance_type='MOTOR')
         
         # Calculate totals
         life_stats = self._calculate_insurance_stats(life_policies, today)
         health_stats = self._calculate_insurance_stats(health_policies, today)
+        motor_stats = self._calculate_insurance_stats(motor_policies, today)
         
         # Upcoming renewals (policies expiring in next 90 days)
         upcoming_renewals = all_policies.filter(
@@ -448,10 +489,12 @@ class DashboardStatsView(APIView):
                 'total_policies': all_policies.count(),
                 'life_insurance_count': life_policies.count(),
                 'health_insurance_count': health_policies.count(),
+                'motor_insurance_count': motor_policies.count(),
                 'total_monthly_premium': monthly_premium,
             },
             'life_insurance': life_stats,
             'health_insurance': health_stats,
+            'motor_insurance': motor_stats,
             'upcoming_renewals': renewals_data,
             'recent_policies': recent_data,
             'profile_completion': self._get_profile_completion(user),

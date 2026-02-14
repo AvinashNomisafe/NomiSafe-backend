@@ -40,8 +40,10 @@ class PolicyAIExtractor:
                 extracted_data = self._extract_life_insurance_data(uploaded_file)
             elif insurance_type == 'HEALTH':
                 extracted_data = self._extract_health_insurance_data(uploaded_file)
+            elif insurance_type == 'MOTOR':
+                extracted_data = self._extract_motor_insurance_data(uploaded_file)
             else:
-                raise ValueError(f"This document doesn't appear to be a valid Health or Life insurance policy. Please upload only insurance policy documents.")
+                raise ValueError(f"This document doesn't appear to be a valid Health, Life, or Motor insurance policy. Please upload only insurance policy documents.")
             
             # Add insurance type to response
             extracted_data['insurance_type'] = insurance_type
@@ -142,7 +144,7 @@ class PolicyAIExtractor:
         - Any other non-insurance document
         
         Respond with ONLY:
-        "VALID" if this is a Life Insurance or Health Insurance policy document
+        "VALID" if this is a Life Insurance, Health Insurance, or Motor/Vehicle Insurance policy document
         "INVALID: <reason>" if this is not an insurance policy (e.g., "INVALID: This appears to be a medical prescription")
         """
         
@@ -154,10 +156,10 @@ class PolicyAIExtractor:
         elif result.upper().startswith('INVALID'):
             # Extract reason after "INVALID:"
             reason = result.split(':', 1)[1].strip() if ':' in result else "This document is not an insurance policy"
-            return (False, f"Invalid document: {reason}. Please upload only Health or Life insurance policy documents.")
+            return (False, f"Invalid document: {reason}. Please upload only Life, Health, or Motor insurance policy documents.")
         else:
             # Unclear response, be conservative
-            return (False, "Unable to verify this as a valid insurance policy document. Please upload only Health or Life insurance policy documents.")
+            return (False, "Unable to verify this as a valid insurance policy document. Please upload only Life, Health, or Motor insurance policy documents.")
     
     def _identify_insurance_type(self, uploaded_file) -> str:
         """Identify the type of insurance from document"""
@@ -167,15 +169,16 @@ class PolicyAIExtractor:
         Return ONLY one of these exact values:
         - LIFE (for Life Insurance, Term Insurance, Endowment, ULIP, Whole Life, Money Back, etc.)
         - HEALTH (for Health Insurance, Mediclaim, Family Floater, Critical Illness, Top-up, etc.)
-        - OTHER (if it's neither life nor health insurance)
+        - MOTOR (for Car Insurance, Two Wheeler Insurance, Vehicle Insurance, Motor Insurance)
+        - OTHER (if it's none of the above)
         
-        Return only the insurance type code (LIFE, HEALTH, or OTHER), nothing else.
+        Return only the insurance type code (LIFE, HEALTH, MOTOR, or OTHER), nothing else.
         """
         
         response = self.model.generate_content([uploaded_file, prompt])
         insurance_type = response.text.strip().upper()
         
-        if insurance_type not in ['LIFE', 'HEALTH']:
+        if insurance_type not in ['LIFE', 'HEALTH', 'MOTOR']:
             return 'OTHER'  # Will be rejected
         
         return insurance_type
@@ -344,3 +347,79 @@ class PolicyAIExtractor:
                 logger.error(f"Cleaned JSON parse failed: {e}")
                 logger.error(f"Full cleaned text:\n{clean_text}")
                 raise ValueError(f"Could not parse JSON response from AI model. The AI returned invalid JSON: {str(e)}")
+    
+    def _extract_motor_insurance_data(self, uploaded_file) -> dict:
+        """Extract data specific to Motor/Vehicle Insurance policies"""
+        prompt = """
+        You are an expert at analyzing Indian Motor/Vehicle Insurance policy documents.
+        Extract the following information and return it as valid JSON.
+        
+        {
+            "policy_number": "string",
+            "insurer_name": "string (e.g., ICICI Lombard, HDFC Ergo, Bajaj Allianz, Reliance General)",
+            "coverage": {
+                "sum_assured": number or null (total cover amount in rupees, no commas),
+                "premium_amount": number (in rupees, no commas),
+                "premium_frequency": "MONTHLY/QUARTERLY/HALF_YEARLY/YEARLY",
+                "maturity_amount": null,
+                "issue_date": "YYYY-MM-DD or null",
+                "start_date": "YYYY-MM-DD or null (policy start date)",
+                "end_date": "YYYY-MM-DD or null (policy expiry date)",
+                "maturity_date": null
+            },
+            "motor_details": {
+                "vehicle_type": "TWO_WHEELER/FOUR_WHEELER/COMMERCIAL",
+                "policy_type": "COMPREHENSIVE/THIRD_PARTY/STANDALONE_OD",
+                "vehicle_make": "string (e.g., Maruti Suzuki, Honda, Hyundai, Hero, Bajaj)",
+                "vehicle_model": "string (e.g., Swift, City, i20, Splendor, Pulsar)",
+                "registration_number": "string (e.g., MH01AB1234)",
+                "engine_number": "string or null",
+                "chassis_number": "string or null",
+                "year_of_manufacture": number or null (e.g., 2020),
+                "idv": number or null (Insured Declared Value in rupees, no commas),
+                "own_damage_cover": number or null (OD cover amount),
+                "third_party_cover": number or null (TP cover amount),
+                "ncb_percentage": number or null (No Claim Bonus percentage, e.g., 20.00, 50.00),
+                "previous_policy_number": "string or null",
+                "has_zero_depreciation": true/false,
+                "has_engine_protection": true/false,
+                "has_roadside_assistance": true/false
+            },
+            "benefits": [
+                {
+                    "benefit_type": "BASE/RIDER/ADDON",
+                    "name": "string (e.g., Own Damage, Third Party Liability, Personal Accident Cover, Zero Depreciation, Engine Protection)",
+                    "description": "string or null",
+                    "coverage_amount": number or null
+                }
+            ],
+            "exclusions": [
+                {
+                    "title": "string",
+                    "description": "string"
+                }
+            ]
+        }
+        
+        Important:
+        - Use YYYY-MM-DD format for dates
+        - Remove commas from numbers
+        - If info not found, use null
+        - IDV is the current market value of the vehicle
+        - For COMPREHENSIVE policy, both own damage and third party are covered
+        - For THIRD_PARTY, only third party liability is covered
+        - NCB (No Claim Bonus) is the discount percentage for claim-free years
+        - List major benefits/add-ons (Zero Depreciation, Engine Protection, Road Side Assistance, etc.)
+        - List 3-5 key exclusions
+        
+        Return ONLY valid JSON.
+        """
+        
+        logger.info("Sending request to Gemini API for motor insurance extraction")
+        response = self.model.generate_content([uploaded_file, prompt])
+        
+        logger.info("Received response from Gemini API")
+        logger.debug(f"Raw response text length: {len(response.text) if response.text else 0}")
+        logger.debug(f"Raw response text: {response.text[:1000]}...")  # Log first 1000 chars
+        
+        return self._parse_json_response(response.text)

@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from .models import (
     Policy, PolicyCoverage, PolicyNominee, PolicyBenefit,
-    PolicyExclusion, HealthInsuranceDetails, CoveredMember
+    PolicyExclusion, HealthInsuranceDetails, CoveredMember, MotorInsuranceDetails
 )
 
 
@@ -97,6 +97,18 @@ class HealthInsuranceDetailsSerializer(serializers.ModelSerializer):
         ]
 
 
+class MotorInsuranceDetailsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MotorInsuranceDetails
+        fields = [
+            'id', 'vehicle_type', 'policy_type', 'vehicle_make', 'vehicle_model',
+            'registration_number', 'engine_number', 'chassis_number', 
+            'year_of_manufacture', 'idv', 'own_damage_cover', 'third_party_cover',
+            'ncb_percentage', 'previous_policy_number', 'has_zero_depreciation',
+            'has_engine_protection', 'has_roadside_assistance'
+        ]
+
+
 class PolicyCoverageSerializer(serializers.ModelSerializer):
     class Meta:
         model = PolicyCoverage
@@ -114,6 +126,7 @@ class PolicyDetailSerializer(serializers.ModelSerializer):
     benefits = PolicyBenefitSerializer(many=True, read_only=True)
     exclusions = PolicyExclusionSerializer(many=True, read_only=True)
     health_details = HealthInsuranceDetailsSerializer(read_only=True)
+    motor_details = MotorInsuranceDetailsSerializer(read_only=True)
     document_url = serializers.SerializerMethodField()
     
     class Meta:
@@ -121,7 +134,7 @@ class PolicyDetailSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'insurance_type', 'policy_number', 'insurer_name',
             'uploaded_at', 'is_active', 'coverage', 'nominees', 'benefits',
-            'exclusions', 'health_details', 'document_url'
+            'exclusions', 'health_details', 'motor_details', 'document_url'
         ]
     
     def get_document_url(self, obj):

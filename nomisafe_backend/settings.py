@@ -15,7 +15,8 @@ ALLOWED_HOSTS = [
     "api.nomisafe.in",
     "15.207.247.24",
     "localhost",
-    "127.0.0.1"
+    "127.0.0.1",
+    "192.168.1.19"
 ]
 CSRF_TRUSTED_ORIGINS = [origin for origin in os.environ.get('DJANGO_CSRF_TRUSTED_ORIGINS', '').split(',') if origin]
 
