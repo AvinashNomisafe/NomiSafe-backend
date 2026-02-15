@@ -14,10 +14,11 @@ import threading
 from .models import (
     Policy, PolicyCoverage, PolicyNominee, PolicyBenefit,
     PolicyExclusion, HealthInsuranceDetails, CoveredMember,
-    ExtractedDocument
+    ExtractedDocument, Tutorial, VideoConfig
 )
 from .serializers import (
-    PolicyUploadSerializer, PolicyListSerializer, PolicyDetailSerializer
+    PolicyUploadSerializer, PolicyListSerializer, PolicyDetailSerializer,
+    TutorialSerializer, VideoConfigSerializer
 )
 from .ai_extractor import PolicyAIExtractor
 
@@ -642,4 +643,26 @@ class DashboardStatsView(APIView):
             'percentage': int((completed / total) * 100)
         }
 
+
+class TutorialListView(APIView):
+    """List all active tutorials"""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        tutorials = Tutorial.objects.filter(is_active=True)
+        serializer = TutorialSerializer(tutorials, many=True, context={'request': request})
+        return Response({
+            'tutorials': serializer.data,
+            'count': tutorials.count()
+        }, status=status.HTTP_200_OK)
+
+
+class VideoConfigView(APIView):
+    """Get home screen video configuration"""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        config = VideoConfig.get_config()
+        serializer = VideoConfigSerializer(config, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
 

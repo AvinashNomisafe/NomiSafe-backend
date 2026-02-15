@@ -1,7 +1,11 @@
 from rest_framework import serializers
+from django.conf import settings
+import boto3
+from botocore.client import Config
 from .models import (
     Policy, PolicyCoverage, PolicyNominee, PolicyBenefit,
-    PolicyExclusion, HealthInsuranceDetails, CoveredMember, MotorInsuranceDetails
+    PolicyExclusion, HealthInsuranceDetails, CoveredMember, MotorInsuranceDetails,
+    Tutorial, VideoConfig
 )
 
 
@@ -143,3 +147,54 @@ class PolicyDetailSerializer(serializers.ModelSerializer):
             if request:
                 return request.build_absolute_uri(obj.document.url)
         return None
+
+class TutorialSerializer(serializers.ModelSerializer):
+    """Serializer for tutorials"""
+    thumbnail_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Tutorial
+        fields = ['id', 'title', 'description', 'thumbnail', 'thumbnail_url', 'youtube_url', 'is_active', 'order', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_thumbnail_url(self, obj):
+        if obj.thumbnail:
+            try:
+                if settings.USE_S3_STORAGE:
+                    region = getattr(settings, 'AWS_S3_REGION_NAME', 'us-east-1')
+                    s3_client = boto3.client(
+                        's3',
+                        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+                        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+                        region_name=region,
+                        config=Config(signature_version='s3v4')
+                    )
+                    
+                    # Get the S3 key - prepend 'tutorial_thumbnails/' since storage location isn't in thumbnail.name
+                    s3_key = f"tutorial_thumbnails/{obj.thumbnail.name}"
+                    
+                    url = s3_client.generate_presigned_url(
+                        'get_object',
+                        Params={
+                            'Bucket': settings.AWS_STORAGE_BUCKET_NAME,
+                            'Key': s3_key,
+                        },
+                        ExpiresIn=3600  # 1 hour
+                    )
+                    return url
+                else:
+                    request = self.context.get('request')
+                    if request:
+                        return request.build_absolute_uri(obj.thumbnail.url)
+            except Exception as e:
+                print(f'Error generating presigned URL for tutorial thumbnail: {str(e)}')
+        return None
+
+
+class VideoConfigSerializer(serializers.ModelSerializer):
+    """Serializer for video configuration"""
+
+    class Meta:
+        model = VideoConfig
+        fields = ['title', 'subtitle', 'youtube_url', 'updated_at']
+        read_only_fields = ['updated_at']

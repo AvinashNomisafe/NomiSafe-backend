@@ -37,3 +37,11 @@ class PropertyDocumentStorage(S3Boto3Storage):
     location = 'properties'
     file_overwrite = False
     default_acl = 'private'
+
+class TutorialThumbnailStorage(S3Boto3Storage):
+    """
+    Custom storage backend for tutorial thumbnails in S3
+    """
+    location = 'tutorial_thumbnails'
+    file_overwrite = False
+    default_acl = 'private'

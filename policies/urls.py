@@ -1,7 +1,8 @@
 from django.urls import path
 from .views import (
     PolicyUploadView, PolicyVerifyView, PolicyListView, 
-    PolicyDetailView, PolicyExtractionStatusView, DashboardStatsView
+    PolicyDetailView, PolicyExtractionStatusView, DashboardStatsView,
+    TutorialListView, VideoConfigView
 )
 
 urlpatterns = [
@@ -11,4 +12,6 @@ urlpatterns = [
     path('upload/', PolicyUploadView.as_view(), name='policy-upload'),
     path('<int:policy_id>/extraction-status/', PolicyExtractionStatusView.as_view(), name='policy-extraction-status'),
     path('<int:policy_id>/verify/', PolicyVerifyView.as_view(), name='policy-verify'),
+    path('tutorials/', TutorialListView.as_view(), name='tutorial-list'),
+    path('video-config/', VideoConfigView.as_view(), name='video-config'),
 ]

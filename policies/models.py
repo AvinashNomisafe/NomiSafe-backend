@@ -14,6 +14,17 @@ def get_policy_storage():
     return None
 
 
+def get_tutorial_storage():
+    """
+    Dynamically get the storage backend for tutorial thumbnails
+    Allows easy switching between local and S3 storage
+    """
+    if getattr(settings, 'USE_S3_STORAGE', False):
+        from nomisafe_backend.storages import TutorialThumbnailStorage
+        return TutorialThumbnailStorage()
+    return None
+
+
 class Policy(models.Model):
     INSURANCE_TYPES = [
         ('LIFE', 'Life Insurance'),
@@ -326,3 +337,46 @@ class ExtractedDocument(models.Model):
     
     def __str__(self):
         return f"Extracted data - {self.policy.name}"
+
+
+class Tutorial(models.Model):
+    """Educational tutorials and how-to videos"""
+    title = models.CharField(max_length=255)
+    description = models.TextField()
+    thumbnail = models.ImageField(upload_to='', storage=get_tutorial_storage())
+    youtube_url = models.URLField(max_length=500)
+    is_active = models.BooleanField(default=True)
+    order = models.PositiveIntegerField(default=0, help_text='Order of display (lowest first)')
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['order', '-created_at']
+        verbose_name = 'Tutorial'
+        verbose_name_plural = 'Tutorials'
+
+    def __str__(self):
+        return self.title
+
+
+class VideoConfig(models.Model):
+    """Configuration for the home screen video section"""
+    title = models.CharField(max_length=255, default='How we secure your family future')
+    subtitle = models.TextField(default='Securely track assets, policies, and investments to protect your family\'s future.')
+    youtube_url = models.URLField(max_length=500, help_text='YouTube video URL for the home screen')
+    
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Video Configuration'
+        verbose_name_plural = 'Video Configuration'
+
+    def __str__(self):
+        return 'Home Screen Video Config'
+    
+    @classmethod
+    def get_config(cls):
+        """Get or create the video configuration"""
+        config, created = cls.objects.get_or_create(pk=1)
+        return config

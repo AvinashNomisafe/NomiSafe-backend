@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Policy, PolicyCoverage, PolicyNominee, PolicyBenefit, PolicyExclusion, HealthInsuranceDetails, CoveredMember, MotorInsuranceDetails, ExtractedDocument
+from .models import Policy, PolicyCoverage, PolicyNominee, PolicyBenefit, PolicyExclusion, HealthInsuranceDetails, CoveredMember, MotorInsuranceDetails, ExtractedDocument, Tutorial, VideoConfig
 
 Policy = admin.site.register(Policy)
 PolicyCoverage = admin.site.register(PolicyCoverage)
@@ -9,4 +9,6 @@ PolicyExclusion = admin.site.register(PolicyExclusion)
 HealthInsuranceDetails = admin.site.register(HealthInsuranceDetails)
 CoveredMember = admin.site.register(CoveredMember)
 MotorInsuranceDetails = admin.site.register(MotorInsuranceDetails)
-ExtractedDocument = admin.site.register(ExtractedDocument)      
+ExtractedDocument = admin.site.register(ExtractedDocument)
+Tutorial = admin.site.register(Tutorial)
+VideoConfig = admin.site.register(VideoConfig)      
