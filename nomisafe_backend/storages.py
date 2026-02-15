@@ -19,3 +19,12 @@ class PolicyDocumentStorage(S3Boto3Storage):
         # Override bucket name if provided in settings
         if hasattr(settings, 'AWS_POLICY_STORAGE_BUCKET_NAME'):
             self.bucket_name = settings.AWS_POLICY_STORAGE_BUCKET_NAME
+
+
+class AppNomineeDocumentStorage(S3Boto3Storage):
+    """
+    Custom storage backend for app nominee documents in S3
+    """
+    location = 'nominees'
+    file_overwrite = False
+    default_acl = 'private'

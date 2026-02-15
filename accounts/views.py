@@ -20,9 +20,10 @@ from .serializers import (
     OTPVerifySerializer,
     UserProfileSerializer,
     UserProfileUpdateSerializer,
+    AppNomineeSerializer,
 )
 from .otp_utils import generate_code, hash_otp, default_otp_ttl
-from .models import OTP
+from .models import OTP, AppNominee
 from .sms_provider import send_sms
 
 
@@ -128,6 +129,33 @@ class OTPVerifyView(APIView):
         user, created = User.objects.get_or_create(phone_number=phone)
         refresh = RefreshToken.for_user(user)
         return Response({'id': user.id, 'phone_number': user.phone_number, 'access': str(refresh.access_token), 'refresh': str(refresh)}, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+
+class AppNomineeView(APIView):
+    """Get or update the user's app nominee"""
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def get(self, request):
+        nominee = AppNominee.objects.filter(user=request.user).first()
+        if not nominee:
+            return Response({'nominee': None}, status=status.HTTP_200_OK)
+
+        serializer = AppNomineeSerializer(nominee, context={'request': request})
+        return Response({'nominee': serializer.data}, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        nominee = AppNominee.objects.filter(user=request.user).first()
+        serializer = AppNomineeSerializer(
+            nominee,
+            data=request.data,
+            partial=True,
+            context={'request': request}
+        )
+        serializer.is_valid(raise_exception=True)
+        instance = serializer.save(user=request.user)
+        response_serializer = AppNomineeSerializer(instance, context={'request': request})
+        return Response({'nominee': response_serializer.data}, status=status.HTTP_200_OK)
 
 
 class UserProfileView(APIView):

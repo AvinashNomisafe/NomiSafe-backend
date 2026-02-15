@@ -1,5 +1,13 @@
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
 from django.db import models
+from django.conf import settings
+
+
+def get_nominee_storage():
+    if getattr(settings, 'USE_S3_STORAGE', False):
+        from nomisafe_backend.storages import AppNomineeDocumentStorage
+        return AppNomineeDocumentStorage()
+    return None
 
 
 class UserManager(BaseUserManager):
@@ -71,5 +79,31 @@ class OTP(models.Model):
     def mark_used(self):
         self.used = True
         self.save(update_fields=['used'])
+
+
+class AppNominee(models.Model):
+    """App-level nominee (separate from policy nominees)"""
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='app_nominee'
+    )
+
+    name = models.CharField(max_length=255)
+    relationship = models.CharField(max_length=100, blank=True, null=True)
+    contact_details = models.CharField(max_length=255, blank=True, null=True)
+    id_proof_type = models.CharField(max_length=100, blank=True, null=True)
+    aadhaar_number = models.CharField(max_length=16, blank=True, null=True)
+    id_proof_file = models.FileField(upload_to='nominees/', storage=get_nominee_storage(), blank=True, null=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'App Nominee'
+        verbose_name_plural = 'App Nominees'
+
+    def __str__(self):
+        return f"{self.name} ({self.user.phone_number})"
 
 

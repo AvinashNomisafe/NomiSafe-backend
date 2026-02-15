@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import OTP, User, UserProfile
+from .models import OTP, User, UserProfile, AppNominee
 
 
 # OTP Serializers
@@ -52,5 +52,34 @@ class UserProfileUpdateSerializer(serializers.Serializer):
         if value and len(value) < 10:
             raise serializers.ValidationError("Phone number must be at least 10 digits")
         return value
+
+
+class AppNomineeSerializer(serializers.ModelSerializer):
+    id_proof_file_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AppNominee
+        fields = [
+            'id',
+            'name',
+            'relationship',
+            'contact_details',
+            'id_proof_type',
+            'aadhaar_number',
+            'id_proof_file',
+            'id_proof_file_url',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'id_proof_file_url']
+
+    def get_id_proof_file_url(self, obj):
+        if not obj.id_proof_file:
+            return None
+        request = self.context.get('request')
+        url = obj.id_proof_file.url
+        if request is not None:
+            return request.build_absolute_uri(url)
+        return url
 
 
