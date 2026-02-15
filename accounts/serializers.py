@@ -114,3 +114,19 @@ class FirstConnectSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'phone_number', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
 
+
+class SOSAlertSerializer(serializers.Serializer):
+    """Serializer for SOS emergency alert"""
+    latitude = serializers.FloatField()
+    longitude = serializers.FloatField()
+    accuracy = serializers.FloatField(required=False, allow_null=True)
+
+    def validate_latitude(self, value):
+        if not -90 <= value <= 90:
+            raise serializers.ValidationError("Latitude must be between -90 and 90")
+        return value
+
+    def validate_longitude(self, value):
+        if not -180 <= value <= 180:
+            raise serializers.ValidationError("Longitude must be between -180 and 180")
+        return value

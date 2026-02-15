@@ -13,6 +13,7 @@ from .views import (
     PropertyDownloadView,
     FirstConnectListCreateView,
     FirstConnectDetailView,
+    SOSAlertView,
 )
 
 urlpatterns = [
@@ -26,5 +27,6 @@ urlpatterns = [
     path('properties/<int:property_id>/download/', PropertyDownloadView.as_view(), name='property-download'),
     path('first-connects/', FirstConnectListCreateView.as_view(), name='first-connects'),
     path('first-connects/<int:pk>/', FirstConnectDetailView.as_view(), name='first-connect-detail'),
+    path('sos/', SOSAlertView.as_view(), name='sos-alert'),
     path('delete-account/', DeleteAccountView.as_view(), name='delete_account'),
 ]

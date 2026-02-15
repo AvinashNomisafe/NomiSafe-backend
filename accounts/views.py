@@ -25,6 +25,7 @@ from .serializers import (
     AppNomineeSerializer,
     PropertySerializer,
     FirstConnectSerializer,
+    SOSAlertSerializer,
 )
 from .otp_utils import generate_code, hash_otp, default_otp_ttl
 from .models import OTP, AppNominee, Property, FirstConnect
@@ -345,4 +346,72 @@ class UserProfileView(APIView):
         response_serializer = UserProfileSerializer(request.user)
         return Response(response_serializer.data, status=status.HTTP_200_OK)
 
+
+class SOSAlertView(APIView):
+    """
+    SOS Emergency Alert API
+    Sends SMS to all FirstConnect contacts with user's location
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = SOSAlertSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        latitude = serializer.validated_data['latitude']
+        longitude = serializer.validated_data['longitude']
+        
+        # Get user's FirstConnect contacts
+        first_connects = FirstConnect.objects.filter(user=request.user)
+        
+        if not first_connects.exists():
+            return Response(
+                {'detail': 'No FirstConnect contacts found. SOS not sent.', 'contacts_notified': 0},
+                status=status.HTTP_200_OK
+            )
+        
+        # Get user's name from profile
+        user_name = None
+        try:
+            from .models import UserProfile
+            profile = UserProfile.objects.get(user=request.user)
+            user_name = profile.name
+        except UserProfile.DoesNotExist:
+            pass
+        
+        # Fallback to phone number if no name
+        if not user_name:
+            user_name = request.user.phone_number
+        
+        # Create Google Maps link
+        maps_link = f"https://maps.google.com/?q={latitude},{longitude}"
+        
+        # Create SMS message (keep under 160 chars for single SMS)
+        # Format: "ALERT: {name} needs help! Loc: {link} -NomiSafe"
+        message = f"ALERT: {user_name} may need help! Location: {maps_link} -NomiSafe"
+        
+        # Send SMS to all FirstConnect contacts
+        contacts_notified = 0
+        failed_contacts = []
+        
+        for contact in first_connects:
+            try:
+                phone = normalize_phone(contact.phone_number)
+                send_sms(phone, message)
+                contacts_notified += 1
+                print(f"[SOS] SMS sent to {contact.name} ({phone})")
+            except Exception as e:
+                print(f"[SOS] Failed to send SMS to {contact.name}: {e}")
+                failed_contacts.append(contact.name)
+        
+        return Response({
+            'detail': f'SOS alert sent to {contacts_notified} contact(s)',
+            'contacts_notified': contacts_notified,
+            'failed_contacts': failed_contacts,
+            'location': {
+                'latitude': latitude,
+                'longitude': longitude,
+                'maps_link': maps_link
+            }
+        }, status=status.HTTP_200_OK)
 
