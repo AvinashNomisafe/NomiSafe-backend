@@ -10,6 +10,13 @@ def get_nominee_storage():
     return None
 
 
+def get_property_storage():
+    if getattr(settings, 'USE_S3_STORAGE', False):
+        from nomisafe_backend.storages import PropertyDocumentStorage
+        return PropertyDocumentStorage()
+    return None
+
+
 class UserManager(BaseUserManager):
     def create_user(self, phone_number, password=None, **extra_fields):
         if not phone_number:
@@ -94,7 +101,7 @@ class AppNominee(models.Model):
     contact_details = models.CharField(max_length=255, blank=True, null=True)
     id_proof_type = models.CharField(max_length=100, blank=True, null=True)
     aadhaar_number = models.CharField(max_length=16, blank=True, null=True)
-    id_proof_file = models.FileField(upload_to='nominees/', storage=get_nominee_storage(), blank=True, null=True)
+    id_proof_file = models.FileField(upload_to='', storage=get_nominee_storage(), blank=True, null=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -102,6 +109,26 @@ class AppNominee(models.Model):
     class Meta:
         verbose_name = 'App Nominee'
         verbose_name_plural = 'App Nominees'
+
+    def __str__(self):
+        return f"{self.name} ({self.user.phone_number})"
+
+
+class Property(models.Model):
+    """Property documents uploaded by the user"""
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='properties'
+    )
+    name = models.CharField(max_length=255)
+    document = models.FileField(upload_to='', storage=get_property_storage())
+
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-uploaded_at']
 
     def __str__(self):
         return f"{self.name} ({self.user.phone_number})"

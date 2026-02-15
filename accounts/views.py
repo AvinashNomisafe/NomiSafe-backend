@@ -14,6 +14,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 import secrets
 import hmac
 import phonenumbers
+import boto3
+from botocore.client import Config
 
 from .serializers import (
     OTPRequestSerializer, 
@@ -21,9 +23,10 @@ from .serializers import (
     UserProfileSerializer,
     UserProfileUpdateSerializer,
     AppNomineeSerializer,
+    PropertySerializer,
 )
 from .otp_utils import generate_code, hash_otp, default_otp_ttl
-from .models import OTP, AppNominee
+from .models import OTP, AppNominee, Property
 from .sms_provider import send_sms
 
 
@@ -156,6 +159,76 @@ class AppNomineeView(APIView):
         instance = serializer.save(user=request.user)
         response_serializer = AppNomineeSerializer(instance, context={'request': request})
         return Response({'nominee': response_serializer.data}, status=status.HTTP_200_OK)
+
+
+class PropertyListCreateView(APIView):
+    """List or upload user properties"""
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def get(self, request):
+        properties = Property.objects.filter(user=request.user)
+        serializer = PropertySerializer(properties, many=True, context={'request': request})
+        return Response({'properties': serializer.data}, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        serializer = PropertySerializer(
+            data=request.data,
+            context={'request': request}
+        )
+        serializer.is_valid(raise_exception=True)
+        instance = serializer.save(user=request.user)
+        response_serializer = PropertySerializer(instance, context={'request': request})
+        return Response({'property': response_serializer.data}, status=status.HTTP_201_CREATED)
+
+
+class PropertyDownloadView(APIView):
+    """Get a fresh download URL for a property document"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, property_id):
+        property_obj = get_object_or_404(
+            Property,
+            id=property_id,
+            user=request.user
+        )
+
+        if not property_obj.document:
+            return Response(
+                {'error': 'Document not available'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Generate presigned URL using boto3 directly
+        try:
+            region = getattr(settings, 'AWS_S3_REGION_NAME', 'ap-south-1')
+            
+            s3_client = boto3.client(
+                's3',
+                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+                region_name=region,
+                config=Config(signature_version='s3v4')
+            )
+            
+            # Get the S3 key - prepend 'properties/' since storage location isn't in document.name
+            s3_key = f"properties/{property_obj.document.name}"
+            
+            url = s3_client.generate_presigned_url(
+                'get_object',
+                Params={
+                    'Bucket': settings.AWS_STORAGE_BUCKET_NAME,
+                    'Key': s3_key,
+                },
+                ExpiresIn=3600  # 1 hour
+            )
+            
+            return Response({'url': url}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response(
+                {'error': f'Failed to generate download URL: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class UserProfileView(APIView):

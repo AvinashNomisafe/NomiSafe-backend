@@ -9,6 +9,8 @@ from .views import (
     UserProfileView,
     DeleteAccountView,
     AppNomineeView,
+    PropertyListCreateView,
+    PropertyDownloadView,
 )
 
 urlpatterns = [
@@ -18,5 +20,7 @@ urlpatterns = [
     path('auth/otp/verify/', OTPVerifyView.as_view(), name='otp_verify'),
     path('profile/', UserProfileView.as_view(), name='user_profile'),
     path('nominee/', AppNomineeView.as_view(), name='app_nominee'),
+    path('properties/', PropertyListCreateView.as_view(), name='properties'),
+    path('properties/<int:property_id>/download/', PropertyDownloadView.as_view(), name='property-download'),
     path('delete-account/', DeleteAccountView.as_view(), name='delete_account'),
 ]

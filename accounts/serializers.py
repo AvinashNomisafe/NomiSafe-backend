@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import OTP, User, UserProfile, AppNominee
+from .models import OTP, User, UserProfile, AppNominee, Property
 
 
 # OTP Serializers
@@ -78,6 +78,31 @@ class AppNomineeSerializer(serializers.ModelSerializer):
             return None
         request = self.context.get('request')
         url = obj.id_proof_file.url
+        if request is not None:
+            return request.build_absolute_uri(url)
+        return url
+
+
+class PropertySerializer(serializers.ModelSerializer):
+    document_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Property
+        fields = [
+            'id',
+            'name',
+            'document',
+            'document_url',
+            'uploaded_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'uploaded_at', 'updated_at', 'document_url']
+
+    def get_document_url(self, obj):
+        if not obj.document:
+            return None
+        request = self.context.get('request')
+        url = obj.document.url
         if request is not None:
             return request.build_absolute_uri(url)
         return url
