@@ -213,7 +213,7 @@ class PolicyAIExtractor:
                 {
                     "benefit_type": "BASE/RIDER/ADDON/BONUS",
                     "name": "string",
-                    "description": "string or null",
+                    "description": "string (mandatory - brief description of what the benefit covers)",
                     "coverage_amount": number or null
                 }
             ],
@@ -231,6 +231,8 @@ class PolicyAIExtractor:
         - If info not found, use null
         - Include all nominees found
         - List major benefits and riders
+        - For EACH benefit, ALWAYS provide a non-null description explaining what the benefit covers
+        - If description is not explicitly mentioned in the policy, infer it based on the benefit name
         - List 3-5 key exclusions
         
         Return ONLY valid JSON.
@@ -281,7 +283,7 @@ class PolicyAIExtractor:
                 {
                     "benefit_type": "BASE/RIDER/ADDON",
                     "name": "string (e.g., Hospitalization, Ambulance, OPD)",
-                    "description": "string or null",
+                    "description": "string (mandatory - brief description of what the benefit covers)",
                     "coverage_amount": number or null
                 }
             ],
@@ -299,6 +301,9 @@ class PolicyAIExtractor:
         - If info not found, use null
         - Include all family members
         - List major benefits (hospitalization, day care, ambulance, etc.)
+        - For EACH benefit, ALWAYS provide a non-null description explaining what the benefit covers
+        - If description is not explicitly mentioned in the policy, infer it based on the benefit name and insurance type
+        - Example: For 'Ambulance', provide description like 'Covers ambulance charges for medical emergencies'
         - List 5-7 key exclusions
         
         Return ONLY valid JSON.
@@ -389,7 +394,7 @@ class PolicyAIExtractor:
                 {
                     "benefit_type": "BASE/RIDER/ADDON",
                     "name": "string (e.g., Own Damage, Third Party Liability, Personal Accident Cover, Zero Depreciation, Engine Protection)",
-                    "description": "string or null",
+                    "description": "string (mandatory - brief description of what the benefit covers)",
                     "coverage_amount": number or null
                 }
             ],
@@ -410,6 +415,9 @@ class PolicyAIExtractor:
         - For THIRD_PARTY, only third party liability is covered
         - NCB (No Claim Bonus) is the discount percentage for claim-free years
         - List major benefits/add-ons (Zero Depreciation, Engine Protection, Road Side Assistance, etc.)
+        - For EACH benefit, ALWAYS provide a non-null description explaining what the benefit covers
+        - If description is not explicitly mentioned in the policy, infer it based on the benefit name
+        - Example: For 'Zero Depreciation', provide description like 'Covers depreciation costs for damaged vehicle parts'
         - List 3-5 key exclusions
         
         Return ONLY valid JSON.

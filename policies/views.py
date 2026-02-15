@@ -179,6 +179,8 @@ class PolicyVerifyView(APIView):
         # Get verified data from request
         verified_data = request.data
         
+        logger.info(f"Verifying policy {policy_id} with data: {verified_data}")
+        
         try:
             with transaction.atomic():
                 # Save verified data to models
@@ -192,12 +194,14 @@ class PolicyVerifyView(APIView):
                 policy.processing_error = None
                 policy.save()
             
+            logger.info(f"Policy {policy_id} verified successfully")
             return Response({
                 'message': 'Policy details saved successfully',
                 'policy_id': policy.id
             }, status=status.HTTP_200_OK)
             
         except Exception as e:
+            logger.error(f"Failed to verify policy {policy_id}: {str(e)}", exc_info=True)
             return Response({
                 'error': 'Failed to save policy details',
                 'details': str(e)
@@ -205,6 +209,9 @@ class PolicyVerifyView(APIView):
     
     def _save_verified_data(self, policy: Policy, data: dict):
         """Save user-verified data to database"""
+        
+        logger.info(f"Saving verified data for policy {policy.id}")
+        logger.debug(f"Insurance type: {data.get('insurance_type')}")
         
         # Update basic policy info
         policy.insurance_type = data.get('insurance_type')
@@ -228,7 +235,7 @@ class PolicyVerifyView(APIView):
             }
         )
         
-        # Save nominees (for Life Insurance)
+        # Save nominees (for Life and Health Insurance)
         if 'nominees' in data and data['nominees']:
             PolicyNominee.objects.filter(policy=policy).delete()
             for nominee_data in data['nominees']:
@@ -247,77 +254,101 @@ class PolicyVerifyView(APIView):
             PolicyBenefit.objects.filter(policy=policy).delete()
             for benefit_data in data['benefits']:
                 if benefit_data.get('name'):
-                    PolicyBenefit.objects.create(
-                        policy=policy,
-                        benefit_type=benefit_data.get('benefit_type', 'BASE'),
-                        name=benefit_data.get('name'),
-                        description=benefit_data.get('description'),
-                        coverage_amount=self._to_decimal(benefit_data.get('coverage_amount'))
-                    )
+                    try:
+                        PolicyBenefit.objects.create(
+                            policy=policy,
+                            benefit_type=benefit_data.get('benefit_type', 'BASE'),
+                            name=benefit_data.get('name'),
+                            description=benefit_data.get('description'),
+                            coverage_amount=self._to_decimal(benefit_data.get('coverage_amount'))
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to save benefit {benefit_data.get('name')}: {str(e)}")
+                        raise
         
         # Save exclusions
         if 'exclusions' in data and data['exclusions']:
             PolicyExclusion.objects.filter(policy=policy).delete()
             for exclusion_data in data['exclusions']:
                 if exclusion_data.get('title'):
-                    PolicyExclusion.objects.create(
-                        policy=policy,
-                        title=exclusion_data.get('title'),
-                        description=exclusion_data.get('description', '')
-                    )
+                    try:
+                        PolicyExclusion.objects.create(
+                            policy=policy,
+                            title=exclusion_data.get('title'),
+                            description=exclusion_data.get('description', '')
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to save exclusion {exclusion_data.get('title')}: {str(e)}")
+                        raise
         
         # Save health-specific details
         if policy.insurance_type == 'HEALTH' and 'health_details' in data:
-            health_data = data['health_details']
-            health_details, _ = HealthInsuranceDetails.objects.update_or_create(
-                policy=policy,
-                defaults={
-                    'policy_type': health_data.get('policy_type'),
-                    'room_rent_limit': self._to_decimal(health_data.get('room_rent_limit')),
-                    'co_payment_percentage': self._to_decimal(
-                        health_data.get('co_payment_percentage')
-                    ),
-                    'cashless_facility': health_data.get('cashless_facility', True)
-                }
-            )
-            
-            # Save covered members
-            if 'covered_members' in data and data['covered_members']:
-                CoveredMember.objects.filter(health_insurance=health_details).delete()
-                for member_data in data['covered_members']:
-                    if member_data.get('name'):
-                        CoveredMember.objects.create(
-                            health_insurance=health_details,
-                            name=member_data.get('name'),
-                            relationship=member_data.get('relationship', ''),
-                            age=member_data.get('age')
-                        )
+            try:
+                health_data = data.get('health_details', {})
+                health_details, created = HealthInsuranceDetails.objects.update_or_create(
+                    policy=policy,
+                    defaults={
+                        'policy_type': health_data.get('policy_type'),
+                        'room_rent_limit': self._to_decimal(health_data.get('room_rent_limit')),
+                        'co_payment_percentage': self._to_decimal(
+                            health_data.get('co_payment_percentage')
+                        ),
+                        'cashless_facility': health_data.get('cashless_facility', True)
+                    }
+                )
+                
+                logger.info(f"{'Created' if created else 'Updated'} health insurance details for policy {policy.id}")
+                
+                # Save covered members
+                if health_data.get('covered_members'):
+                    CoveredMember.objects.filter(health_insurance=health_details).delete()
+                    for member_data in health_data['covered_members']:
+                        if member_data.get('name'):
+                            try:
+                                CoveredMember.objects.create(
+                                    health_insurance=health_details,
+                                    name=member_data.get('name'),
+                                    relationship=member_data.get('relationship'),
+                                    age=member_data.get('age'),
+                                    date_of_birth=self._parse_date(member_data.get('date_of_birth'))
+                                )
+                            except Exception as e:
+                                logger.error(f"Failed to save covered member {member_data.get('name')}: {str(e)}")
+                                raise
+            except Exception as e:
+                logger.error(f"Failed to save health insurance details for policy {policy.id}: {str(e)}", exc_info=True)
+                raise
         
         # Save motor-specific details
         if policy.insurance_type == 'MOTOR' and 'motor_details' in data:
-            from .models import MotorInsuranceDetails
-            motor_data = data['motor_details']
-            MotorInsuranceDetails.objects.update_or_create(
-                policy=policy,
-                defaults={
-                    'vehicle_type': motor_data.get('vehicle_type'),
-                    'policy_type': motor_data.get('policy_type'),
-                    'vehicle_make': motor_data.get('vehicle_make'),
-                    'vehicle_model': motor_data.get('vehicle_model'),
-                    'registration_number': motor_data.get('registration_number'),
-                    'engine_number': motor_data.get('engine_number'),
-                    'chassis_number': motor_data.get('chassis_number'),
-                    'year_of_manufacture': motor_data.get('year_of_manufacture'),
-                    'idv': self._to_decimal(motor_data.get('idv')),
-                    'own_damage_cover': self._to_decimal(motor_data.get('own_damage_cover')),
-                    'third_party_cover': self._to_decimal(motor_data.get('third_party_cover')),
-                    'ncb_percentage': self._to_decimal(motor_data.get('ncb_percentage')),
-                    'previous_policy_number': motor_data.get('previous_policy_number'),
-                    'has_zero_depreciation': motor_data.get('has_zero_depreciation', False),
-                    'has_engine_protection': motor_data.get('has_engine_protection', False),
-                    'has_roadside_assistance': motor_data.get('has_roadside_assistance', False),
-                }
-            )
+            try:
+                from .models import MotorInsuranceDetails
+                motor_data = data.get('motor_details', {})
+                MotorInsuranceDetails.objects.update_or_create(
+                    policy=policy,
+                    defaults={
+                        'vehicle_type': motor_data.get('vehicle_type'),
+                        'policy_type': motor_data.get('policy_type'),
+                        'vehicle_make': motor_data.get('vehicle_make'),
+                        'vehicle_model': motor_data.get('vehicle_model'),
+                        'registration_number': motor_data.get('registration_number'),
+                        'engine_number': motor_data.get('engine_number'),
+                        'chassis_number': motor_data.get('chassis_number'),
+                        'year_of_manufacture': motor_data.get('year_of_manufacture'),
+                        'idv': self._to_decimal(motor_data.get('idv')),
+                        'own_damage_cover': self._to_decimal(motor_data.get('own_damage_cover')),
+                        'third_party_cover': self._to_decimal(motor_data.get('third_party_cover')),
+                        'ncb_percentage': self._to_decimal(motor_data.get('ncb_percentage')),
+                        'previous_policy_number': motor_data.get('previous_policy_number'),
+                        'has_zero_depreciation': motor_data.get('has_zero_depreciation', False),
+                        'has_engine_protection': motor_data.get('has_engine_protection', False),
+                        'has_roadside_assistance': motor_data.get('has_roadside_assistance', False),
+                    }
+                )
+                logger.info(f"Saved motor insurance details for policy {policy.id}")
+            except Exception as e:
+                logger.error(f"Failed to save motor insurance details for policy {policy.id}: {str(e)}", exc_info=True)
+                raise
     
     def _to_decimal(self, value):
         """Convert value to Decimal"""

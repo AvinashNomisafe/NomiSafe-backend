@@ -228,7 +228,7 @@ class HealthInsuranceDetails(models.Model):
     room_rent_limit = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
     co_payment_percentage = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True)
     network_hospitals_count = models.IntegerField(blank=True, null=True)
-    cashless_facility = models.BooleanField(default=True)
+    cashless_facility = models.BooleanField(default=True, null=True)
     
     def __str__(self):
         return f"Health Details - {self.policy.name}"
@@ -243,13 +243,13 @@ class CoveredMember(models.Model):
     )
     
     name = models.CharField(max_length=255)
-    relationship = models.CharField(max_length=50)
+    relationship = models.CharField(max_length=50, blank=True, null=True)
     date_of_birth = models.DateField(blank=True, null=True)
     age = models.IntegerField(blank=True, null=True)
     pre_existing_conditions = models.TextField(blank=True, null=True)
     
     def __str__(self):
-        return f"{self.name} - {self.relationship}"
+        return f"{self.name} - {self.relationship if self.relationship else 'Member'}"
 
 
 class MotorInsuranceDetails(models.Model):
