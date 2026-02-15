@@ -134,3 +134,23 @@ class Property(models.Model):
         return f"{self.name} ({self.user.phone_number})"
 
 
+class FirstConnect(models.Model):
+    """First Connect emergency contacts (max 3 per user)"""
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='first_connects'
+    )
+    name = models.CharField(max_length=255)
+    phone_number = models.CharField(max_length=20)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"{self.name} - {self.phone_number} ({self.user.phone_number})"
+
+

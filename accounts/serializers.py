@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import OTP, User, UserProfile, AppNominee, Property
+from .models import OTP, User, UserProfile, AppNominee, Property, FirstConnect
 
 
 # OTP Serializers
@@ -107,4 +107,10 @@ class PropertySerializer(serializers.ModelSerializer):
             return request.build_absolute_uri(url)
         return url
 
+
+class FirstConnectSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FirstConnect
+        fields = ['id', 'name', 'phone_number', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
 

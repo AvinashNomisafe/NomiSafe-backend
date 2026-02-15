@@ -11,6 +11,8 @@ from .views import (
     AppNomineeView,
     PropertyListCreateView,
     PropertyDownloadView,
+    FirstConnectListCreateView,
+    FirstConnectDetailView,
 )
 
 urlpatterns = [
@@ -22,5 +24,7 @@ urlpatterns = [
     path('nominee/', AppNomineeView.as_view(), name='app_nominee'),
     path('properties/', PropertyListCreateView.as_view(), name='properties'),
     path('properties/<int:property_id>/download/', PropertyDownloadView.as_view(), name='property-download'),
+    path('first-connects/', FirstConnectListCreateView.as_view(), name='first-connects'),
+    path('first-connects/<int:pk>/', FirstConnectDetailView.as_view(), name='first-connect-detail'),
     path('delete-account/', DeleteAccountView.as_view(), name='delete_account'),
 ]

@@ -24,9 +24,10 @@ from .serializers import (
     UserProfileUpdateSerializer,
     AppNomineeSerializer,
     PropertySerializer,
+    FirstConnectSerializer,
 )
 from .otp_utils import generate_code, hash_otp, default_otp_ttl
-from .models import OTP, AppNominee, Property
+from .models import OTP, AppNominee, Property, FirstConnect
 from .sms_provider import send_sms
 
 
@@ -229,6 +230,68 @@ class PropertyDownloadView(APIView):
                 {'error': f'Failed to generate download URL: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class FirstConnectListCreateView(APIView):
+    """List and create First Connect emergency contacts (max 3)"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """Get all first connects for current user"""
+        first_connects = FirstConnect.objects.filter(user=request.user)
+        serializer = FirstConnectSerializer(first_connects, many=True)
+        return Response({
+            'first_connects': serializer.data,
+            'count': first_connects.count(),
+            'max_allowed': 3,
+            'remaining': max(0, 3 - first_connects.count())
+        }, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        """Create a new first connect (max 3 allowed)"""
+        # Check if user already has 3 first connects
+        current_count = FirstConnect.objects.filter(user=request.user).count()
+        if current_count >= 3:
+            return Response(
+                {'error': 'Maximum 3 First Connect contacts allowed'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = FirstConnectSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        instance = serializer.save(user=request.user)
+        
+        return Response({
+            'first_connect': FirstConnectSerializer(instance).data,
+            'count': current_count + 1,
+            'remaining': max(0, 2 - current_count)
+        }, status=status.HTTP_201_CREATED)
+
+
+class FirstConnectDetailView(APIView):
+    """Update or delete a First Connect contact"""
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request, pk):
+        """Update a first connect"""
+        first_connect = get_object_or_404(FirstConnect, id=pk, user=request.user)
+        serializer = FirstConnectSerializer(first_connect, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({'first_connect': serializer.data}, status=status.HTTP_200_OK)
+
+    def delete(self, request, pk):
+        """Delete a first connect"""
+        first_connect = get_object_or_404(FirstConnect, id=pk, user=request.user)
+        first_connect.delete()
+        
+        # Return updated count
+        current_count = FirstConnect.objects.filter(user=request.user).count()
+        return Response({
+            'message': 'First Connect deleted successfully',
+            'count': current_count,
+            'remaining': max(0, 3 - current_count)
+        }, status=status.HTTP_200_OK)
 
 
 class UserProfileView(APIView):
